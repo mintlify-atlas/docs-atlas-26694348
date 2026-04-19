@@ -1,0 +1,225 @@
+---
+title: "Using DocStrings to pass multiline text to step defs"
+description: "How to use DocStrings in Gherkin feature files to pass multiline text to step definitions, including typed conversion with @DocStringType."
+---
+
+DocStrings let you attach a block of multiline text to a step in a Gherkin feature file. They are useful when a step needs a payload that is too large or too structured to fit naturally on one line, such as a JSON body, an XML document, an SQL query, or any other multiline content. Cucumber passes the text to your step definition as a parameter automatically, and you can opt in to typed conversion using `@DocStringType`.
+
+## Basic syntax in Gherkin
+
+Delimit a DocString with triple double-quotes (`"""`) on their own lines, immediately after the step text. The content type is optional and appears on the opening delimiter line.
+
+```gherkin title="features/api.feature"
+Scenario: create a user via API
+  When I POST to "/users" with body
+    """
+    {
+      "name": "Alice",
+      "email": "alice@example.com"
+    }
+    """
+  Then the response status is 201
+```
+
+The indentation of the DocString content is stripped to align with the opening `"""`. Any additional indentation within the block is preserved relative to that baseline.
+
+---
+
+## Receiving a DocString as String
+
+The simplest way to consume a DocString is to declare a `String` parameter in your step definition. Cucumber passes the raw content of the DocString, with surrounding delimiters and leading indentation already removed.
+
+```java title="src/test/java/ApiSteps.java"
+import io.cucumber.java.en.When;
+
+public class ApiSteps {
+
+    @When("I POST to {string} with body")
+    public void iPostToWithBody(String path, String body) {
+        // body is the raw JSON string
+        httpClient.post(path, body);
+    }
+}
+```
+
+---
+
+## Content type annotation
+
+Annotate the opening delimiter with a media type to convey intent, and optionally to drive automatic conversion to a typed object.
+
+```gherkin title="features/config.feature"
+Scenario: load XML configuration
+  Given the configuration is
+    """xml
+    <config>
+      <host>localhost</host>
+      <port>8080</port>
+    </config>
+    """
+```
+
+When you receive this as a `String`, the content type is simply metadata in the feature file. To use it for conversion, receive the step argument as a `DocString` object.
+
+---
+
+## Receiving a DocString object
+
+Import `io.cucumber.docstring.DocString` to receive the step argument as a `DocString`. This gives you access to both the content and the declared content type.
+
+```java title="src/test/java/ConfigSteps.java"
+import io.cucumber.docstring.DocString;
+import io.cucumber.java.en.Given;
+
+public class ConfigSteps {
+
+    @Given("the configuration is")
+    public void theConfigurationIs(DocString docString) {
+        String content = docString.getContent();
+        String contentType = docString.getContentType(); // "xml" or null
+        // parse content according to contentType
+    }
+}
+```
+
+`getContentType()` returns `null` when no content type is specified on the opening delimiter.
+
+---
+
+## Custom type conversion with @DocStringType
+
+Use `@DocStringType` to register a converter that maps a DocString with a specific content type to a Java object. Cucumber will call this converter automatically when your step definition declares the target type as its parameter.
+
+```java title="src/test/java/DocStringConverters.java"
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.cucumber.java.DocStringType;
+
+public class DocStringConverters {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @DocStringType(contentType = "json")
+    public UserRequest json(String content) throws Exception {
+        return objectMapper.readValue(content, UserRequest.class);
+    }
+}
+```
+
+With this converter registered, you can write:
+
+```gherkin title="features/users.feature"
+Scenario: create user from JSON body
+  When I create a user with
+    """json
+    {
+      "name": "Bob",
+      "role": "admin"
+    }
+    """
+```
+
+```java title="src/test/java/UserSteps.java"
+import io.cucumber.java.en.When;
+
+public class UserSteps {
+
+    @When("I create a user with")
+    public void iCreateAUserWith(UserRequest request) {
+        // request is already a fully converted UserRequest object
+        userService.create(request);
+    }
+}
+```
+
+### Multiple converters for the same content type
+
+Cucumber supports multiple `@DocStringType` methods with the same content type, provided they convert to different Java types. The correct converter is selected based on the declared parameter type in the step definition.
+
+```java
+@DocStringType(contentType = "json")
+public UserRequest jsonToUser(String content) throws Exception {
+    return objectMapper.readValue(content, UserRequest.class);
+}
+
+@DocStringType(contentType = "json")
+public Map<String, Object> jsonToMap(String content) throws Exception {
+    return objectMapper.readValue(content, new TypeReference<>() {});
+}
+```
+
+---
+
+## Fallback: no content type declared
+
+When no content type appears on the `"""` delimiter and no `@DocStringType` matches, Cucumber falls back to passing the raw `String` content. A converter registered without a `contentType` attribute acts as the default fallback for a specific Java type.
+
+```java
+@DocStringType
+public JsonNode defaultJson(String content) throws Exception {
+    return objectMapper.readTree(content);
+}
+```
+
+---
+
+## Complete example: testing an HTTP API
+
+```gherkin title="features/orders.feature"
+Feature: order management
+
+  Scenario: place an order
+    When I place an order with
+      """json
+      {
+        "product": "Widget",
+        "quantity": 10,
+        "currency": "USD"
+      }
+      """
+    Then the order confirmation contains
+      """json
+      {
+        "status": "ACCEPTED"
+      }
+      """
+```
+
+```java title="src/test/java/OrderSteps.java"
+import io.cucumber.java.en.Then;
+import io.cucumber.java.en.When;
+
+public class OrderSteps {
+
+    private OrderConfirmation confirmation;
+
+    @When("I place an order with")
+    public void iPlaceAnOrder(OrderRequest request) {
+        this.confirmation = orderService.place(request);
+    }
+
+    @Then("the order confirmation contains")
+    public void theOrderConfirmationContains(OrderConfirmation expected) {
+        assert confirmation.getStatus().equals(expected.getStatus());
+    }
+}
+```
+
+```java title="src/test/java/OrderConverters.java"
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.cucumber.java.DocStringType;
+
+public class OrderConverters {
+
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    @DocStringType(contentType = "json")
+    public OrderRequest orderRequest(String json) throws Exception {
+        return mapper.readValue(json, OrderRequest.class);
+    }
+
+    @DocStringType(contentType = "json")
+    public OrderConfirmation orderConfirmation(String json) throws Exception {
+        return mapper.readValue(json, OrderConfirmation.class);
+    }
+}
+```

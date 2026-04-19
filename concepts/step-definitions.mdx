@@ -1,0 +1,341 @@
+---
+title: "Step definitions in Cucumber JVM: annotations and types"
+description: "Learn how to write Cucumber JVM step definitions using @Given, @When, @Then, Cucumber Expressions, regex, DataTable, DocString, and custom parameter types."
+---
+
+Step definitions are Java methods that Cucumber calls when it matches a Gherkin step. Each method is annotated with `@Given`, `@When`, or `@Then` (from `io.cucumber.java`) and carries a Cucumber Expression or regular expression that defines which step text it handles. When Cucumber executes a scenario it matches each step against registered step definitions, extracts any parameters, and calls the corresponding method.
+
+## Basic step annotations
+
+The `@Given`, `@When`, and `@Then` annotations are functionally identical — you can use any of them on any step. The distinction is purely for readability and communication.
+
+```java title="src/test/java/com/example/steps/CartStepDefinitions.java"
+package com.example.steps;
+
+import io.cucumber.java.en.Given;
+import io.cucumber.java.en.When;
+import io.cucumber.java.en.Then;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class CartStepDefinitions {
+
+    private Cart cart;
+
+    @Given("the cart is empty")
+    public void theCartIsEmpty() {
+        cart = new Cart();
+    }
+
+    @When("I add {string} to the cart")
+    public void iAddItemToCart(String itemName) {
+        cart.add(itemName);
+    }
+
+    @Then("the cart should contain {int} item(s)")
+    public void theCartShouldContainItems(int expectedCount) {
+        assertEquals(expectedCount, cart.size());
+    }
+}
+```
+
+<Note>
+Import the English keyword annotations from `io.cucumber.java.en`. Cucumber also ships annotations for many other spoken languages under `io.cucumber.java.<language_code>`, for example `io.cucumber.java.de.Gegeben`.
+</Note>
+
+## Cucumber Expressions
+
+Cucumber Expressions are the recommended way to capture step parameters. Built-in parameter types are surrounded by `{ }`.
+
+| Parameter type | Matches | Java type |
+|---|---|---|
+| `{int}` | An integer | `int` / `Integer` |
+| `{long}` | A long integer | `long` / `Long` |
+| `{float}` | A floating-point number | `float` / `Float` |
+| `{double}` | A double | `double` / `Double` |
+| `{string}` | A double- or single-quoted string (quotes stripped) | `String` |
+| `{word}` | A single word (no whitespace) | `String` |
+| `{biginteger}` | A big integer | `BigInteger` |
+| `{bigdecimal}` | A big decimal | `BigDecimal` |
+| `{}` | Any text (anonymous) | `String` |
+
+```java title="src/test/java/com/example/steps/PricingStepDefinitions.java"
+@Given("the item costs {double}")
+public void itemCosts(double price) {
+    this.price = price;
+}
+
+@When("a discount of {int} percent is applied")
+public void applyDiscount(int percent) {
+    this.discountPercent = percent;
+}
+
+@Then("the final price should be {double}")
+public void assertFinalPrice(double expected) {
+    assertEquals(expected, price * (1.0 - discountPercent / 100.0), 0.001);
+}
+```
+
+### Optional text and alternation
+
+Cucumber Expressions support optional text in parentheses and alternation with `/`:
+
+```java title="src/test/java/com/example/steps/OrderStepDefinitions.java"
+// Matches "1 item" and "5 items"
+@Then("there is/are {int} item(s) in the cart")
+public void itemCount(int count) { ... }
+
+// Matches "I am logged in" and "I am not logged in"
+@Given("I am (not )logged in")
+public void loginState() { ... }
+```
+
+## Regular expressions
+
+You can use a full Java regular expression instead of a Cucumber Expression. Capture groups become method parameters.
+
+```java title="src/test/java/com/example/steps/AuthStepDefinitions.java"
+@Given("^a user with email \"([^\"]+)\" and role \"([^\"]+)\" exists$")
+public void userExists(String email, String role) {
+    userService.create(email, role);
+}
+```
+
+<Warning>
+When using a regex, every capture group must correspond to a method parameter. Cucumber cannot auto-detect parameter types from regex; it will use the declared Java type to coerce the captured string.
+</Warning>
+
+## DocString parameters
+
+A DocString is a multi-line block of text attached to a step, delimited by triple quotes. Declare a `String` parameter as the last argument of the step method to receive it.
+
+```gherkin title="src/test/resources/features/api.feature"
+Scenario: Submit JSON payload
+  When I POST to "/api/orders" with body
+    """json
+    {
+      "item": "Widget",
+      "quantity": 3
+    }
+    """
+  Then the response status should be 201
+```
+
+```java title="src/test/java/com/example/steps/ApiStepDefinitions.java"
+@When("I POST to {string} with body")
+public void iPostWithBody(String path, String body) {
+    response = httpClient.post(path, body);
+}
+```
+
+### Custom DocString types
+
+Use `@DocStringType` to convert a DocString to a domain object. The method name (or `contentType` attribute) defines the content type marker used in the feature file.
+
+```java title="src/test/java/com/example/config/TypeRegistryConfig.java"
+import io.cucumber.java.DocStringType;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+public class TypeRegistryConfig {
+
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    @DocStringType(contentType = "json")
+    public JsonNode json(String docString) throws Exception {
+        return mapper.readTree(docString);
+    }
+}
+```
+
+```java title="src/test/java/com/example/steps/ApiStepDefinitions.java"
+@When("I POST to {string} with body")
+public void iPostWithBody(String path, JsonNode body) {
+    response = httpClient.post(path, body);
+}
+```
+
+## DataTable parameters
+
+A DataTable is a grid of values attached to a step. Declare a `io.cucumber.datatable.DataTable` parameter or a higher-level collection type to receive it.
+
+```gherkin title="src/test/resources/features/users.feature"
+Scenario: Create multiple users
+  Given the following users exist:
+    | name    | email               | role  |
+    | Alice   | alice@example.com   | admin |
+    | Bob     | bob@example.com     | user  |
+```
+
+```java title="src/test/java/com/example/steps/UserStepDefinitions.java"
+import io.cucumber.java.en.Given;
+import java.util.List;
+import java.util.Map;
+
+public class UserStepDefinitions {
+
+    @Given("the following users exist:")
+    public void usersExist(List<Map<String, String>> users) {
+        for (Map<String, String> row : users) {
+            userService.create(row.get("name"), row.get("email"), row.get("role"));
+        }
+    }
+}
+```
+
+See [Working with data tables](/concepts/data-tables) for a full guide to DataTable conversion types.
+
+## Injecting the Scenario object
+
+Any step definition or hook method can declare a parameter of type `io.cucumber.java.Scenario` to receive metadata about the currently running scenario. This is useful for attaching screenshots or logging extra information.
+
+```java title="src/test/java/com/example/steps/ScreenshotStepDefinitions.java"
+import io.cucumber.java.After;
+import io.cucumber.java.Scenario;
+
+public class ScreenshotStepDefinitions {
+
+    @After
+    public void afterScenario(Scenario scenario) {
+        if (scenario.isFailed()) {
+            byte[] screenshot = driver.getScreenshotAs(OutputType.BYTES);
+            scenario.attach(screenshot, "image/png", "Failure screenshot");
+        }
+        scenario.log("Finished: " + scenario.getName());
+    }
+}
+```
+
+## Custom parameter types with @ParameterType
+
+Register a custom parameter type so Cucumber can convert step text directly to a domain object. The annotation's `value` attribute is the regex that matches the parameter, and the method name (or `name` attribute) becomes the parameter type name used in expressions.
+
+```java title="src/test/java/com/example/config/ParameterTypes.java"
+import io.cucumber.java.ParameterType;
+import java.time.LocalDate;
+
+public class ParameterTypes {
+
+    @ParameterType("\\d{4}-\\d{2}-\\d{2}")
+    public LocalDate iso8601Date(String dateString) {
+        return LocalDate.parse(dateString);
+    }
+}
+```
+
+```gherkin
+Given the promotion starts on 2025-06-01
+```
+
+```java
+@Given("the promotion starts on {iso8601Date}")
+public void promotionStartsOn(LocalDate date) {
+    promotion.setStart(date);
+}
+```
+
+## Custom DataTable types with @DataTableType
+
+Use `@DataTableType` to convert a data table row, entry, cell, or whole table to a custom type. The method signature determines which transformer is registered:
+
+| Method signature | Transformer type |
+|---|---|
+| `String → YourType` | `TableCellTransformer` |
+| `Map<String,String> → YourType` | `TableEntryTransformer` |
+| `List<String> → YourType` | `TableRowTransformer` |
+| `DataTable → YourType` | `TableTransformer` |
+
+```java title="src/test/java/com/example/config/DataTableTypes.java"
+import io.cucumber.java.DataTableType;
+import java.util.Map;
+
+public class DataTableTypes {
+
+    @DataTableType
+    public Author author(Map<String, String> entry) {
+        return new Author(
+            entry.get("firstName"),
+            entry.get("lastName"),
+            entry.get("birthDate")
+        );
+    }
+}
+```
+
+```java title="src/test/java/com/example/steps/BookStepDefinitions.java"
+@Given("the following authors exist:")
+public void authorsExist(List<Author> authors) {
+    authors.forEach(authorRepository::save);
+}
+```
+
+## @DefaultParameterTransformer
+
+`@DefaultParameterTransformer` registers a fallback converter that Cucumber uses when no specific `@ParameterType` handles a given type. This is useful for integrating an object mapper such as Jackson.
+
+```java title="src/test/java/com/example/config/TypeRegistryConfig.java"
+import io.cucumber.java.DefaultParameterTransformer;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.lang.reflect.Type;
+
+public class TypeRegistryConfig {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @DefaultParameterTransformer
+    public Object transform(Object fromValue, Type toValueType) {
+        return objectMapper.convertValue(fromValue, objectMapper.constructType(toValueType));
+    }
+}
+```
+
+## PendingException
+
+Throw `io.cucumber.java.PendingException` from a step definition to mark it as not yet implemented. Cucumber marks the step as **pending** and skips the remaining steps in the scenario.
+
+```java
+import io.cucumber.java.PendingException;
+import io.cucumber.java.en.When;
+
+public class PaymentSteps {
+
+    @When("I pay with {string}")
+    public void iPayWith(String method) {
+        throw new PendingException();
+    }
+}
+```
+
+This is the same exception Cucumber inserts when it auto-generates step definition snippets for unmatched steps.
+
+## @Transpose
+
+Use `@Transpose` on a step definition parameter to instruct Cucumber to transpose a vertical data table before converting it. This is useful when a table is written with field names in the first column and values in the second.
+
+```gherkin
+Given the user is
+  | firstname   | Roberto   |
+  | lastname    | Lo Giacco |
+  | nationality | Italian   |
+```
+
+Without `@Transpose`, this table is treated as two rows. With `@Transpose`, it is converted as a single-entry map — matching a `Map<String, String> → User` transformer:
+
+```java
+import io.cucumber.java.DataTableType;
+import io.cucumber.java.Transpose;
+import io.cucumber.java.en.Given;
+import java.util.Map;
+
+public class UserSteps {
+
+    @DataTableType
+    public User convert(Map<String, String> entry) {
+        return new User(entry.get("firstname"), entry.get("lastname"), entry.get("nationality"));
+    }
+
+    @Given("the user is")
+    public void theUserIs(@Transpose User user) {
+        this.user = user;
+    }
+}
+```

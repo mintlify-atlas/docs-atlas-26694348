@@ -1,0 +1,223 @@
+---
+title: "Using hooks to manage the Cucumber JVM test lifecycle"
+description: "Learn how to use Cucumber JVM hooks—@Before, @After, @BeforeStep, @AfterStep, @BeforeAll, @AfterAll—to manage setup, teardown, and test lifecycle."
+---
+
+Hooks are Java methods that Cucumber calls automatically at specific points in the test lifecycle. They live in your glue code alongside step definitions and are discovered through the same package scanning mechanism. Unlike step definitions, hooks are not matched by text — they run for every scenario (or every step) unless you restrict them with a tag expression.
+
+## @Before and @After
+
+`@Before` runs before each scenario; `@After` runs after. Both can optionally accept an `io.cucumber.java.Scenario` parameter.
+
+```java title="src/test/java/com/example/hooks/BrowserHooks.java"
+package com.example.hooks;
+
+import io.cucumber.java.After;
+import io.cucumber.java.Before;
+import io.cucumber.java.Scenario;
+
+public class BrowserHooks {
+
+    private WebDriver driver;
+
+    @Before
+    public void openBrowser() {
+        driver = new ChromeDriver();
+    }
+
+    @After
+    public void closeBrowser(Scenario scenario) {
+        if (scenario.isFailed()) {
+            byte[] screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
+            scenario.attach(screenshot, "image/png", "failure-screenshot");
+        }
+        driver.quit();
+    }
+}
+```
+
+The `Scenario` object lets you inspect the scenario's status, attach data to reports, and write log messages:
+
+```java
+scenario.getStatus()          // PASSED, FAILED, PENDING, UNDEFINED, SKIPPED
+scenario.isFailed()           // shorthand for Status.FAILED check
+scenario.attach(bytes, mediaType, name)  // embed images, HTML, etc.
+scenario.log(text)            // append text to the report
+scenario.getName()            // scenario display name
+scenario.getSourceTagNames()  // tags applied to the scenario
+```
+
+## Tag-conditional hooks
+
+Pass a [Cucumber tag expression](https://cucumber.io/docs/cucumber/api/#tag-expressions) as the annotation's `value` to restrict a hook to matching scenarios.
+
+```java title="src/test/java/com/example/hooks/BrowserHooks.java"
+import io.cucumber.java.Before;
+import io.cucumber.java.After;
+
+public class BrowserHooks {
+
+    @Before("@browser")
+    public void startBrowser() {
+        driver = new ChromeDriver();
+    }
+
+    @After("@browser")
+    public void stopBrowser() {
+        driver.quit();
+    }
+
+    @Before("@database and not @readonly")
+    public void resetDatabase() {
+        testDatabase.truncateAll();
+        testDatabase.loadFixtures();
+    }
+}
+```
+
+Tag expressions support `and`, `or`, and `not` operators as well as parentheses for grouping.
+
+## Hook ordering
+
+When multiple hooks of the same type exist, the `order` attribute controls the execution sequence.
+
+- For `@Before` and `@BeforeStep`, **lower** numbers run **first** (default: `10000`).
+- For `@After` and `@AfterStep`, **higher** numbers run **first** (default: `10000`).
+
+This means `@Before` hooks run from lowest to highest order, while `@After` hooks unwind in the reverse direction — mirroring the way stack frames are typically entered and exited.
+
+```java title="src/test/java/com/example/hooks/SetupHooks.java"
+import io.cucumber.java.Before;
+import io.cucumber.java.After;
+
+public class SetupHooks {
+
+    @Before(order = 100)
+    public void startDatabase() {
+        // Runs first — database must be up before browser
+        db.start();
+    }
+
+    @Before(order = 200)
+    public void startBrowser() {
+        driver = new ChromeDriver();
+    }
+
+    @After(order = 200)
+    public void closeBrowser() {
+        // Runs first during teardown (higher order = earlier for @After)
+        driver.quit();
+    }
+
+    @After(order = 100)
+    public void stopDatabase() {
+        // Runs last during teardown
+        db.stop();
+    }
+}
+```
+
+## Hook names
+
+Assign a human-readable `name` to a hook so it appears clearly in reports and failure messages. This was introduced in Cucumber JVM v8.
+
+```java title="src/test/java/com/example/hooks/BrowserHooks.java"
+@Before(value = "@browser", order = 100, name = "Start browser")
+public void startBrowser() {
+    driver = new ChromeDriver();
+}
+
+@After(value = "@browser", order = 100, name = "Stop browser and capture screenshot")
+public void stopBrowser(Scenario scenario) {
+    if (scenario.isFailed()) {
+        scenario.attach(
+            ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES),
+            "image/png",
+            "screenshot"
+        );
+    }
+    driver.quit();
+}
+```
+
+## @BeforeStep and @AfterStep
+
+`@BeforeStep` runs before every step; `@AfterStep` runs after every step. Both support tag expressions, ordering, and names using the same attributes as `@Before` / `@After`.
+
+For `@AfterStep`, **higher** order numbers run **first**.
+
+Step hook methods accept zero, one, or two parameters. The first optional parameter is `Scenario`; the second is `io.cucumber.java.Step`, which provides `getKeyword()`, `getText()`, and `getLine()` for the current step.
+
+```java title="src/test/java/com/example/hooks/StepHooks.java"
+import io.cucumber.java.AfterStep;
+import io.cucumber.java.BeforeStep;
+import io.cucumber.java.Scenario;
+import io.cucumber.java.Step;
+
+public class StepHooks {
+
+    @BeforeStep
+    public void beforeEachStep(Scenario scenario, Step step) {
+        System.out.println("About to execute: " + step.getKeyword() + step.getText()
+            + " in scenario: " + scenario.getName());
+    }
+
+    @AfterStep
+    public void afterEachStep(Scenario scenario) {
+        if (scenario.isFailed()) {
+            // Log step failure — attach screenshots or other data using your UI tool's API
+            scenario.log("Step failed in scenario: " + scenario.getName());
+        }
+    }
+}
+```
+
+<Note>
+Use `@BeforeStep` and `@AfterStep` sparingly. Running expensive operations before every step will significantly slow down your test suite.
+</Note>
+
+## @BeforeAll and @AfterAll
+
+`@BeforeAll` runs once before any scenario; `@AfterAll` runs once after all scenarios have completed. These methods must be `static` because they execute outside the scope of any individual scenario or object instance.
+
+<Warning>
+`@BeforeAll` and `@AfterAll` are marked `@API(status = EXPERIMENTAL)` in the source code. The API may change in future versions.
+</Warning>
+
+- For `@BeforeAll`, **lower** order numbers run **first** (default: `10000`).
+- For `@AfterAll`, **higher** order numbers run **first** (default: `10000`).
+
+```java title="src/test/java/com/example/hooks/GlobalHooks.java"
+import io.cucumber.java.AfterAll;
+import io.cucumber.java.BeforeAll;
+
+public class GlobalHooks {
+
+    @BeforeAll
+    public static void startTestContainers() {
+        DatabaseContainer.start();
+        RedisContainer.start();
+    }
+
+    @AfterAll
+    public static void stopTestContainers() {
+        RedisContainer.stop();
+        DatabaseContainer.stop();
+    }
+}
+```
+
+<Note>
+`@BeforeAll` and `@AfterAll` do not support tag expressions because they run outside the context of any individual scenario.
+</Note>
+
+## Summary of hook attributes
+
+| Annotation | `value` (tag expression) | `order` | `name` | Must be `static` |
+|---|---|---|---|---|
+| `@Before` | yes | lower runs first | yes | no |
+| `@After` | yes | higher runs first | yes | no |
+| `@BeforeStep` | yes | lower runs first | yes | no |
+| `@AfterStep` | yes | higher runs first | yes | no |
+| `@BeforeAll` | no | lower runs first | no | yes |
+| `@AfterAll` | no | higher runs first | no | yes |

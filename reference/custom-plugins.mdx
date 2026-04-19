@@ -1,0 +1,297 @@
+---
+title: "Building custom Cucumber JVM plugins and reporters"
+description: "How to implement custom Cucumber JVM plugins that listen to test execution events, with complete examples for EventListener and ConcurrentEventListener."
+---
+
+Cucumber JVM's plugin system lets you hook into every phase of test execution through a well-defined event bus. Whether you need to stream results to an external system, aggregate metrics, or build a custom report format, the plugin API gives you access to the same event stream that drives all of Cucumber's built-in reporters. This page covers implementing the `Plugin` interface, choosing between `EventListener` and `ConcurrentEventListener`, working with available event types, and registering your plugin.
+
+## The Plugin interface
+
+All plugins implement `io.cucumber.plugin.Plugin`. This is a marker interface — it carries no methods of its own but signals to Cucumber that the class should be treated as a plugin. Plugins are instantiated by Cucumber and may accept an optional constructor argument for configuration (such as an output path).
+
+```java title="src/main/java/com/example/MyPlugin.java"
+package com.example;
+
+import io.cucumber.plugin.Plugin;
+
+public class MyPlugin implements Plugin {
+    // marker — implement EventListener or ConcurrentEventListener to receive events
+}
+```
+
+### Constructor arguments
+
+A plugin may declare a public constructor accepting one of the following types:
+
+| Type | Purpose |
+|---|---|
+| `String` | Arbitrary configuration string |
+| `java.io.File` | Output file |
+| `java.net.URI` | Output URI |
+| `java.net.URL` | Output URL |
+| `java.io.Appendable` | Appendable stream (e.g. `PrintStream`) |
+
+To make the argument optional, also provide a public no-arg constructor.
+
+```java
+public class MyPlugin implements Plugin {
+
+    private final File outputFile;
+
+    public MyPlugin(File outputFile) {
+        this.outputFile = outputFile;
+    }
+
+    public MyPlugin() {
+        this(new File("target/my-report.txt"));
+    }
+}
+```
+
+---
+
+## EventListener vs ConcurrentEventListener
+
+Cucumber publishes events on an event bus during test execution. You choose one of two interfaces to receive them.
+
+### EventListener
+
+`io.cucumber.plugin.EventListener` is the standard choice. When tests run in **parallel**, Cucumber buffers all events and replays them in **canonical order** after the test run completes. This makes the event stream easy to reason about — events always arrive in the order they would appear in a sequential run — but you will not see events in real time during parallel execution.
+
+```java
+import io.cucumber.plugin.EventListener;
+import io.cucumber.plugin.event.EventPublisher;
+
+public class MyPlugin implements EventListener {
+
+    @Override
+    public void setEventPublisher(EventPublisher publisher) {
+        publisher.registerHandlerFor(TestRunStarted.class, this::onTestRunStarted);
+        publisher.registerHandlerFor(TestCaseFinished.class, this::onTestCaseFinished);
+    }
+
+    private void onTestRunStarted(TestRunStarted event) { ... }
+    private void onTestCaseFinished(TestCaseFinished event) { ... }
+}
+```
+
+### ConcurrentEventListener
+
+`io.cucumber.plugin.ConcurrentEventListener` receives events **as they occur**, even during parallel execution. Events from different test cases may interleave. Use this when you need real-time streaming (e.g. live progress feeds, streaming to an external system).
+
+Cucumber guarantees:
+1. The event publisher is synchronised — events are never published concurrently.
+2. The callback thread may differ between test cases running on different threads.
+
+```java
+import io.cucumber.plugin.ConcurrentEventListener;
+import io.cucumber.plugin.event.EventPublisher;
+
+public class LiveProgressPlugin implements ConcurrentEventListener {
+
+    @Override
+    public void setEventPublisher(EventPublisher publisher) {
+        publisher.registerHandlerFor(TestStepFinished.class, this::onStepFinished);
+    }
+
+    private void onStepFinished(TestStepFinished event) {
+        // called immediately as each step finishes, even in parallel runs
+        System.out.print(event.getResult().getStatus() == Status.PASSED ? "." : "F");
+    }
+}
+```
+
+---
+
+## Registering event handlers
+
+Use `EventPublisher.registerHandlerFor(EventClass, handler)` inside `setEventPublisher` to subscribe to specific event types. The handler is a functional interface (`EventHandler<T>`) compatible with a method reference or lambda.
+
+```java
+publisher.registerHandlerFor(TestCaseStarted.class, event -> {
+    System.out.println("Starting: " + event.getTestCase().getName());
+});
+```
+
+---
+
+## Available event types
+
+All event classes live in the `io.cucumber.plugin.event` package.
+
+<AccordionGroup>
+  <Accordion title="Test run lifecycle">
+    | Event | Fired when |
+    |---|---|
+    | `TestRunStarted` | Before any scenarios execute |
+    | `TestRunFinished` | After all scenarios have completed |
+  </Accordion>
+
+  <Accordion title="Test case lifecycle">
+    | Event | Fired when |
+    |---|---|
+    | `TestCaseStarted` | Before a scenario (test case) begins |
+    | `TestCaseFinished` | After a scenario completes (with overall result) |
+  </Accordion>
+
+  <Accordion title="Test step lifecycle">
+    | Event | Fired when |
+    |---|---|
+    | `TestStepStarted` | Before a step or hook executes |
+    | `TestStepFinished` | After a step or hook completes (with result) |
+  </Accordion>
+
+  <Accordion title="Output events">
+    | Event | Fired when |
+    |---|---|
+    | `EmbedEvent` | A step embeds binary data (e.g. screenshot) via `Scenario.attach()` |
+    | `WriteEvent` | A step writes text to the output via `Scenario.log()` |
+  </Accordion>
+
+  <Accordion title="Discovery events">
+    | Event | Fired when |
+    |---|---|
+    | `TestSourceRead` | A feature file is read from disk |
+    | `TestSourceParsed` | A feature file is successfully parsed |
+    | `StepDefinedEvent` | A step definition is registered |
+    | `SnippetsSuggestedEvent` | An undefined step generates a snippet suggestion |
+  </Accordion>
+</AccordionGroup>
+
+### Accessing result details
+
+`TestCaseFinished` and `TestStepFinished` both carry a `Result` object:
+
+```java
+publisher.registerHandlerFor(TestCaseFinished.class, event -> {
+    Result result = event.getResult();
+    Status status = result.getStatus(); // PASSED, FAILED, SKIPPED, PENDING, UNDEFINED
+    Throwable error = result.getError(); // null if no failure
+    Duration duration = result.getDuration();
+});
+```
+
+---
+
+## Complete working example
+
+The following plugin listens to test events and writes a plain-text summary to a file.
+
+```java title="src/main/java/com/example/SummaryPlugin.java"
+package com.example;
+
+import io.cucumber.plugin.EventListener;
+import io.cucumber.plugin.event.EventPublisher;
+import io.cucumber.plugin.event.Result;
+import io.cucumber.plugin.event.Status;
+import io.cucumber.plugin.event.TestCaseFinished;
+import io.cucumber.plugin.event.TestRunFinished;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.List;
+
+public class SummaryPlugin implements EventListener {
+
+    private final File outputFile;
+    private final List<String> lines = new ArrayList<>();
+
+    public SummaryPlugin(File outputFile) {
+        this.outputFile = outputFile;
+    }
+
+    @Override
+    public void setEventPublisher(EventPublisher publisher) {
+        publisher.registerHandlerFor(TestCaseFinished.class, this::onTestCaseFinished);
+        publisher.registerHandlerFor(TestRunFinished.class, this::onTestRunFinished);
+    }
+
+    private void onTestCaseFinished(TestCaseFinished event) {
+        Result result = event.getResult();
+        String name = event.getTestCase().getName();
+        Status status = result.getStatus();
+        lines.add(status.name() + ": " + name);
+    }
+
+    private void onTestRunFinished(TestRunFinished event) {
+        try (PrintWriter writer = new PrintWriter(outputFile)) {
+            lines.forEach(writer::println);
+            writer.println("Total: " + lines.size());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to write summary", e);
+        }
+    }
+}
+```
+
+---
+
+## Registering a custom plugin
+
+Set the fully-qualified class name in the `cucumber.plugin` property, optionally followed by `:` and a configuration argument.
+
+<Tabs>
+  <Tab title="cucumber.properties">
+    ```properties
+    cucumber.plugin=com.example.SummaryPlugin:target/my-summary.txt
+    ```
+  </Tab>
+  <Tab title="@CucumberOptions">
+    ```java
+    @CucumberOptions(
+        plugin = {"com.example.SummaryPlugin:target/my-summary.txt"}
+    )
+    public class RunCucumberTest {}
+    ```
+  </Tab>
+  <Tab title="junit-platform.properties">
+    ```properties
+    cucumber.plugin=com.example.SummaryPlugin:target/my-summary.txt
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## ColorAware — ANSI colour support
+
+If your plugin writes coloured text to the console, implement `io.cucumber.plugin.ColorAware`. Cucumber calls `setMonochrome(true)` when ANSI colours are disabled (e.g. because `cucumber.ansi-colors.disabled=true` is set), giving your plugin the chance to fall back to plain text output.
+
+```java title="src/main/java/com/example/ColourfulPlugin.java"
+package com.example;
+
+import io.cucumber.plugin.ColorAware;
+import io.cucumber.plugin.EventListener;
+import io.cucumber.plugin.event.EventPublisher;
+import io.cucumber.plugin.event.TestCaseFinished;
+
+public class ColourfulPlugin implements EventListener, ColorAware {
+
+    private boolean monochrome = false;
+
+    @Override
+    public void setMonochrome(boolean monochrome) {
+        this.monochrome = monochrome;
+    }
+
+    @Override
+    public void setEventPublisher(EventPublisher publisher) {
+        publisher.registerHandlerFor(TestCaseFinished.class, this::onTestCaseFinished);
+    }
+
+    private void onTestCaseFinished(TestCaseFinished event) {
+        String name = event.getTestCase().getName();
+        if (monochrome) {
+            System.out.println("[PASS] " + name);
+        } else {
+            System.out.println("\u001B[32m[PASS]\u001B[0m " + name);
+        }
+    }
+}
+```
+
+<Note>
+`ColorAware` is only relevant for plugins that write to a terminal. File-based reporters do not need to implement it.
+</Note>

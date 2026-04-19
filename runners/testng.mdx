@@ -1,0 +1,135 @@
+---
+title: "Running Cucumber scenarios with TestNG"
+description: "Execute Cucumber with TestNG: add the dependency, extend AbstractTestNGCucumberTests, enable parallel data providers, and configure options per suite."
+---
+
+The `cucumber-testng` module integrates Cucumber with the TestNG testing framework. It exposes each Cucumber scenario as a TestNG data-provider row, which means TestNG's standard reporting, listeners, and parallelism features all work with your feature files out of the box.
+
+## Adding the dependency
+
+Add `cucumber-testng` to your project using the `cucumber-bom` for version management:
+
+```xml pom.xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-bom</artifactId>
+      <version>${cucumber.version}</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+
+<dependencies>
+  <dependency>
+    <groupId>io.cucumber</groupId>
+    <artifactId>cucumber-testng</artifactId>
+    <scope>test</scope>
+  </dependency>
+</dependencies>
+```
+
+## Creating a runner class
+
+Extend `AbstractTestNGCucumberTests` and annotate the class with `@CucumberOptions` to configure feature paths, glue packages, and plugins. Cucumber discovers feature files and step definitions from the same package as the runner by default.
+
+```java src/test/java/io/cucumber/runtime/testng/RunCucumberTest.java
+package io.cucumber.runtime.testng;
+
+import io.cucumber.testng.AbstractTestNGCucumberTests;
+import io.cucumber.testng.CucumberOptions;
+
+@CucumberOptions(plugin = "message:target/cucumber-report.ndjson")
+public class RunCucumberTest extends AbstractTestNGCucumberTests {
+}
+```
+
+The `AbstractTestNGCucumberTests` base class provides the `scenarios()` data provider that maps each Cucumber scenario to a TestNG test method invocation.
+
+## Enabling parallel execution
+
+By default, scenarios run sequentially. To execute them in parallel, override the `scenarios()` method and set `parallel = true` on the `@DataProvider` annotation:
+
+```java src/test/java/com/example/RunCucumberTest.java
+package com.example;
+
+import io.cucumber.testng.AbstractTestNGCucumberTests;
+import io.cucumber.testng.CucumberOptions;
+import org.testng.annotations.DataProvider;
+
+@CucumberOptions(plugin = "message:target/cucumber-report.ndjson")
+public class RunCucumberTest extends AbstractTestNGCucumberTests {
+
+    @Override
+    @DataProvider(parallel = true)
+    public Object[][] scenarios() {
+        return super.scenarios();
+    }
+}
+```
+
+The number of parallel threads is controlled by the `dataproviderthreadcount` Surefire property. Configure it in Maven Surefire as follows:
+
+```xml pom.xml
+<plugins>
+  <plugin>
+    <groupId>org.apache.maven.plugins</groupId>
+    <artifactId>maven-surefire-plugin</artifactId>
+    <configuration>
+      <properties>
+        <property>
+          <name>dataproviderthreadcount</name>
+          <value>${threadcount}</value>
+        </property>
+      </properties>
+    </configuration>
+  </plugin>
+</plugins>
+```
+
+Pass the thread count at build time: `mvn test -Dthreadcount=4`.
+
+## Configuring options per suite with testng.xml
+
+When you need different Cucumber options for different test suites (for example, separate feature directories with separate glue packages), pass them as parameters in `testng.xml`. Parameters defined at the `<suite>` level apply to all tests; parameters at the `<test>` level override them for that test.
+
+```xml testng.xml
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd" >
+<suite name="Example Suite">
+  <!-- Applies to all tests in the suite -->
+  <parameter name="cucumber.filter.tags" value="@Gherkin and not @Zucchini" />
+
+  <test name="Vegetable garden" preserve-order="true">
+    <parameter name="cucumber.features" value="classpath:com/example/features/vegetable"/>
+    <parameter name="cucumber.glue" value="com.example.vegetables.glue"/>
+    <classes>
+      <class name="com.example.RunCucumberTests"/>
+    </classes>
+  </test>
+
+  <test name="Herb garden" preserve-order="true">
+    <parameter name="cucumber.features" value="classpath:com/example/features/herbs"/>
+    <parameter name="cucumber.glue" value="com.example.herbs.glue"/>
+    <classes>
+      <class name="com.example.RunCucumberTests"/>
+    </classes>
+  </test>
+</suite>
+```
+
+## Using TestNGCucumberRunner directly
+
+If you need more control than inheritance allows, you can compose the runner instead of extending it. This is useful when your test class already inherits from another base class.
+
+See the [RunCukesByCompositionTest example](https://github.com/cucumber/cucumber-jvm/blob/main/examples/java-calculator-testng/src/test/java/cucumber/examples/java/calculator/RunCukesByCompositionTest.java) in the cucumber-jvm repository for a full working example.
+
+## SkipException behaviour
+
+Cucumber provides limited support for TestNG's `SkipException`:
+
+- Throwing `SkipException` directly marks the scenario as skipped in both Cucumber and TestNG reports.
+- Throwing a **subclass** of `SkipException` marks the scenario as failed in Cucumber but skipped in TestNG.
+
+Use the base `SkipException` class when you want consistent skip behaviour across both reporting systems.

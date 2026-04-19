@@ -1,0 +1,171 @@
+---
+title: "Gherkin syntax for writing Cucumber feature scenarios"
+description: "Learn how to write Cucumber feature files using Gherkin keywords: Feature, Scenario, Given/When/Then, Background, Scenario Outline, Rule, and tags."
+---
+
+Gherkin is the plain-text language Cucumber uses to describe application behavior in `.feature` files. It is designed to be readable by non-technical stakeholders while remaining precise enough for Cucumber to execute. Every feature file is a structured document made up of keywords that tell Cucumber how to organize and run your scenarios.
+
+## Feature
+
+The `Feature` keyword opens a feature file and gives it a name. Everything that follows belongs to that feature. You can add a free-text description below the feature name — Cucumber ignores it during execution but tools such as report generators display it.
+
+```gherkin title="src/test/resources/features/shopping_cart.feature"
+Feature: Shopping cart
+  As a registered customer
+  I want to add items to my cart
+  So that I can purchase them later
+```
+
+## Scenario
+
+A `Scenario` is a single concrete example that illustrates a rule about your system. Each scenario runs independently.
+
+```gherkin title="src/test/resources/features/shopping_cart.feature"
+Feature: Shopping cart
+
+  Scenario: Add a single item to an empty cart
+    Given the cart is empty
+    When I add "Wireless Headphones" to the cart
+    Then the cart should contain 1 item
+    And the cart total should be 79.99
+```
+
+## Given / When / Then / And / But
+
+These keywords express the three phases of a scenario:
+
+- **Given** — establishes preconditions (system state before the action).
+- **When** — describes the action or event under test.
+- **Then** — states the expected outcome.
+- **And** / **But** — continue the previous keyword type to avoid repetition.
+
+```gherkin title="src/test/resources/features/authentication.feature"
+Feature: User authentication
+
+  Scenario: Successful login with valid credentials
+    Given a user with email "alice@example.com" exists
+    And the user has set their password to "s3cr3t"
+    When the user submits the login form
+    Then the user should be redirected to the dashboard
+    But the login page should not be shown
+```
+
+<Note>
+`And` and `But` inherit the meaning of the preceding keyword. A step starting with `And` after a `Given` is treated as another `Given`, and so on. Use whichever reads most naturally in English.
+</Note>
+
+## Background
+
+`Background` defines steps that run before every scenario in the feature file. Use it to avoid duplicating common setup across scenarios.
+
+```gherkin title="src/test/resources/features/account.feature"
+Feature: Account management
+
+  Background:
+    Given the application is running
+    And I am logged in as "admin@example.com"
+
+  Scenario: View account details
+    When I navigate to "My Account"
+    Then I should see my profile information
+
+  Scenario: Update email address
+    When I change my email to "newemail@example.com"
+    Then my email should be updated successfully
+```
+
+<Note>
+Background steps appear in reports as part of each scenario. Keep them short — if the Background grows long, consider splitting the feature file.
+</Note>
+
+## Scenario Outline and Examples
+
+`Scenario Outline` (or its alias `Scenario Template`) lets you run the same scenario with multiple sets of data. Placeholders wrapped in `< >` are replaced with values from the `Examples` table.
+
+<Tabs>
+  <Tab title="Scenario Outline">
+    ```gherkin title="src/test/resources/features/pricing.feature"
+    Feature: Discount pricing
+
+      Scenario Outline: Apply percentage discount
+        Given the original price is <price>
+        When a discount of <discount>% is applied
+        Then the final price should be <final>
+
+        Examples:
+          | price | discount | final |
+          | 100   | 10       | 90    |
+          | 200   | 25       | 150   |
+          | 50    | 50       | 25    |
+    ```
+  </Tab>
+  <Tab title="Multiple Example tables">
+    ```gherkin title="src/test/resources/features/pricing.feature"
+    Feature: Discount pricing
+
+      Scenario Outline: Apply discount by membership tier
+        Given the original price is <price>
+        When a <tier> discount is applied
+        Then the final price should be <final>
+
+        @gold
+        Examples: Gold tier
+          | price | tier | final |
+          | 100   | gold | 80    |
+          | 200   | gold | 160   |
+
+        @silver
+        Examples: Silver tier
+          | price  | tier   | final |
+          | 100    | silver | 90    |
+          | 200    | silver | 180   |
+    ```
+  </Tab>
+</Tabs>
+
+## Rule
+
+The `Rule` keyword (introduced in Gherkin 6) groups related scenarios under a single business rule. It acts as a logical grouping within a feature, sitting between the `Feature` and individual scenarios.
+
+```gherkin title="src/test/resources/features/checkout.feature"
+Feature: Checkout
+
+  Rule: A customer cannot check out with an empty cart
+
+    Scenario: Attempt to check out with no items
+      Given the cart is empty
+      When I click "Proceed to checkout"
+      Then I should see the message "Your cart is empty"
+
+  Rule: Out-of-stock items cannot be added
+
+    Scenario: Add an out-of-stock item
+      Given "Vintage Camera" is out of stock
+      When I try to add "Vintage Camera" to my cart
+      Then I should see "Item unavailable"
+```
+
+## Tags
+
+Tags are labels that start with `@`. They can be placed on `Feature`, `Rule`, `Scenario`, `Scenario Outline`, or individual `Examples` blocks. Tags are used to filter which scenarios run and to trigger tag-conditional hooks.
+
+```gherkin title="src/test/resources/features/payment.feature"
+@payments
+Feature: Payment processing
+
+  @smoke @fast
+  Scenario: Pay with a valid credit card
+    Given I have items in my cart
+    When I pay with card number "4111111111111111"
+    Then the order should be confirmed
+
+  @slow @browser
+  Scenario: Pay via PayPal redirect
+    Given I have items in my cart
+    When I choose PayPal at checkout
+    Then I should be redirected to PayPal
+```
+
+<Tip>
+Tags on a `Feature` are inherited by all scenarios inside it. Tags on `Examples` blocks are inherited by every row of that table.
+</Tip>

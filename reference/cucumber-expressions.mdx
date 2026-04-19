@@ -1,0 +1,260 @@
+---
+title: "Cucumber Expressions reference for matching step parameters"
+description: "Reference for Cucumber Expressions: built-in parameter types, optional text, alternation, custom types, and when to use regular expressions instead."
+---
+
+Cucumber Expressions are the primary way to match step text and extract typed parameters in Cucumber JVM. They offer a more readable alternative to raw regular expressions while still supporting every data type you need, from primitives to complex domain objects. When a step definition's expression matches a step in a feature file, Cucumber automatically converts the captured text into the Java types declared in the method signature.
+
+## Built-in parameter types
+
+Cucumber ships with parameter types for the most common Java primitives and wrapper types. Each type matches a specific pattern of text in the step.
+
+| Type | Example match | Java type |
+|---|---|---|
+| `{int}` | `42`, `-7` | `int` / `Integer` |
+| `{long}` | `9876543210` | `long` / `Long` |
+| `{short}` | `32767` | `short` / `Short` |
+| `{byte}` | `127` | `byte` / `Byte` |
+| `{float}` | `3.14`, `-0.5` | `float` / `Float` |
+| `{double}` | `3.14159265` | `double` / `Double` |
+| `{bigdecimal}` | `1,234.56` | `BigDecimal` |
+| `{biginteger}` | `99999999999` | `BigInteger` |
+| `{word}` | `hello`, `foo_bar` | `String` (no spaces) |
+| `{string}` | `"hello"` or `'world'` | `String` (quoted) |
+| `{}` | any text | `String` (anonymous) |
+
+### {int} and numeric types
+
+```gherkin title="features/basket.feature"
+Scenario: add items to basket
+  Given I have 3 items in my basket
+  When I add 2 more items
+  Then I should have 5 items total
+```
+
+```java title="src/test/java/BasketSteps.java"
+import io.cucumber.java.en.Given;
+import io.cucumber.java.en.When;
+import io.cucumber.java.en.Then;
+
+public class BasketSteps {
+
+    private int itemCount;
+
+    @Given("I have {int} items in my basket")
+    public void iHaveItemsInMyBasket(int count) {
+        this.itemCount = count;
+    }
+
+    @When("I add {int} more items")
+    public void iAddMoreItems(int added) {
+        this.itemCount += added;
+    }
+
+    @Then("I should have {int} items total")
+    public void iShouldHaveItemsTotal(int expected) {
+        assert itemCount == expected;
+    }
+}
+```
+
+### {float} and {double}
+
+```gherkin
+Scenario: calculate price with tax
+  Given the price is 9.99
+  And the tax rate is 0.2
+  Then the total is 11.988
+```
+
+```java
+@Given("the price is {double}")
+public void thePriceIs(double price) { ... }
+
+@And("the tax rate is {double}")
+public void theTaxRateIs(double rate) { ... }
+```
+
+### {string} — quoted strings
+
+`{string}` matches text surrounded by **double quotes** or **single quotes** and strips the quotes before passing the value to your step.
+
+```gherkin
+Scenario: greet a user
+  Given the user is named "Alice"
+  And the greeting is 'Hello there'
+```
+
+```java
+@Given("the user is named {string}")
+public void theUserIsNamed(String name) {
+    // name is "Alice" — quotes stripped
+}
+
+@And("the greeting is {string}")
+public void theGreetingIs(String greeting) {
+    // greeting is "Hello there" — single quotes also stripped
+}
+```
+
+### {word}
+
+`{word}` matches a single word (no whitespace). Use it when you need an unquoted label or identifier.
+
+```gherkin
+Scenario: check status
+  Given the status is active
+```
+
+```java
+@Given("the status is {word}")
+public void theStatusIs(String status) {
+    // status is "active"
+}
+```
+
+### Anonymous parameter {}
+
+The anonymous parameter `{}` matches any text (including spaces) and is always mapped to `String`. Use it when you do not need type conversion and prefer not to write a named parameter type.
+
+```gherkin
+Scenario: log a message
+  Given the log contains I started the server on port 8080
+```
+
+```java
+@Given("the log contains {}")
+public void theLogContains(String message) {
+    // message is "I started the server on port 8080"
+}
+```
+
+---
+
+## Optional text with ()
+
+Wrap text in parentheses to make it optional. Cucumber will match the step whether or not the optional part is present, and the same step definition handles both forms.
+
+```gherkin
+Scenario Outline: cart operations
+  Given there is/are <count> item(s) in the cart
+```
+
+```java
+@Given("there is/are {int} item(s) in the cart")
+public void itemsInCart(int count) { ... }
+```
+
+Both of these steps match the same definition:
+
+```gherkin
+Given there is 1 item in the cart
+Given there are 3 items in the cart
+```
+
+---
+
+## Alternation with /
+
+Use `/` to provide alternative words at the same position in a step. This is different from optional text — both sides are complete alternatives.
+
+```gherkin
+Given I log in/sign in with "alice@example.com"
+```
+
+```java
+@Given("I log in/sign in with {string}")
+public void iLogIn(String email) { ... }
+```
+
+<Note>
+Alternation cannot contain spaces without using a parameter type. If you need alternation over multi-word phrases, use a regular expression or a custom parameter type instead.
+</Note>
+
+---
+
+## Custom parameter types with @ParameterType
+
+Annotate a method with `@ParameterType` to register a new named parameter type. The method receives the matched string and returns the converted object. The annotation value is a regular expression that defines what text the type will match.
+
+```gherkin title="features/currency.feature"
+Scenario: convert currency
+  Given the amount is USD 100
+  And the target currency is EUR
+```
+
+```java title="src/test/java/CurrencyParameterTypes.java"
+import io.cucumber.java.ParameterType;
+import java.util.Currency;
+
+public class CurrencyParameterTypes {
+
+    @ParameterType("USD|EUR|GBP|JPY")
+    public Currency currency(String code) {
+        return Currency.getInstance(code);
+    }
+}
+```
+
+```java title="src/test/java/CurrencySteps.java"
+import io.cucumber.java.en.Given;
+import java.util.Currency;
+
+public class CurrencySteps {
+
+    @Given("the target currency is {currency}")
+    public void theTargetCurrencyIs(Currency currency) {
+        // currency is java.util.Currency instance for EUR
+    }
+}
+```
+
+### Matching complex objects
+
+Custom parameter types can match multi-word patterns and return any Java type.
+
+```java
+@ParameterType("\\d{4}-\\d{2}-\\d{2}")
+public LocalDate iso8601Date(String dateString) {
+    return LocalDate.parse(dateString);
+}
+```
+
+```gherkin
+Given the booking date is 2024-03-15
+```
+
+```java
+@Given("the booking date is {iso8601Date}")
+public void theBookingDateIs(LocalDate date) { ... }
+```
+
+---
+
+## Regular expressions as an alternative
+
+You can use a full Java regular expression instead of a Cucumber Expression. This is useful when you need lookaheads, character classes, or other features not available in Cucumber Expressions.
+
+```java
+@Given("^I have (\\d+) cukes? in my belly$")
+public void iHaveCukesInMyBelly(int cukes) { ... }
+```
+
+<Warning>
+You cannot mix Cucumber Expression syntax (like `{int}`) inside a regular expression. Choose one style per step definition.
+</Warning>
+
+When Cucumber sees `^` or `$` anchors, or other regex metacharacters that are not valid in Cucumber Expressions, it automatically treats the pattern as a regular expression.
+
+---
+
+## Choosing the right approach
+
+| Situation | Recommendation |
+|---|---|
+| Matching primitives and strings | Use built-in types: `{int}`, `{string}`, etc. |
+| Matching domain objects | Define a `@ParameterType` |
+| Optional words or plurals | Use `(s)` optional syntax |
+| Two alternative phrases | Use `/` alternation |
+| Complex patterns (lookaheads, etc.) | Use a regular expression |
+| Anonymous free-form text | Use `{}` |

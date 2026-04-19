@@ -1,0 +1,227 @@
+---
+title: "Cucumber JVM changelog and version release history"
+description: "Notable releases in Cucumber JVM's history, summarising key additions, fixes, and changes for each version with links to GitHub for full details."
+---
+
+Cucumber JVM follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The public API is defined as any public class in the `cucumber.api` package or annotated with `@API(status = API.Status.STABLE)`. Breaking changes to the public API are only made in major releases. The full changelog is maintained in [CHANGELOG.md](https://github.com/cucumber/cucumber-jvm/blob/main/CHANGELOG.md) at the root of the repository, which follows the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format. This page summarises the most recent and notable releases; follow the GitHub links for the complete list of changes in each version.
+
+<Note>
+For migration instructions between major versions, see the [Upgrading guide](/reference/upgrading).
+</Note>
+
+---
+
+## Recent releases
+
+<AccordionGroup>
+
+  <Accordion title="[Unreleased] — next major version">
+
+    **Breaking changes:**
+    - Java 17 is now the minimum supported version.
+    - All classes not designed for extension are now `final`.
+    - Utility classes are no longer instantiatable.
+    - Nullability of the public API is declared using [JSpecify](https://jspecify.dev/) annotations.
+
+    **Dependencies updated:**
+    - JUnit Platform 6.0.2 / JUnit Jupiter 6.0.2
+    - Cucumber Expressions v19
+    - Gherkin v38
+    - Messages v32
+    - HTML Formatter v23
+
+    **Added:**
+    - Optional names for `@Before`, `@After`, `@BeforeStep`, and `@AfterStep` hooks — hook names are now emitted in the message stream.
+
+    **Fixed:**
+    - JUnit Platform Engine now accepts partial matches with `cucumber.filter.name`, aligning behaviour with JUnit 4 and the CLI.
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/compare/v7.34.3...HEAD)
+
+  </Accordion>
+
+  <Accordion title="7.34.3 — 2026-03-04">
+
+    **Fixed:**
+    - Updated `messages-ndjson` to v0.3.2 to resolve a serialisation issue.
+    - Updated Jackson BOM to v2.21.1 for security and compatibility patches.
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/releases/tag/v7.34.3)
+
+  </Accordion>
+
+  <Accordion title="7.34.0 — 2026-01-28">
+
+    **Added:**
+    - Successful hooks are now hidden by default in the HTML report (less noise for passing runs).
+    - PicoContainer now supports `Provider` instances.
+    - `@BeforeStep` and `@AfterStep` hooks now receive `Step` info as a parameter.
+
+    **Changed:**
+    - Internals refactored to use `messages-ndjson` for serialisation.
+
+    **Fixed:**
+    - Potential class loading issues are now ignored gracefully.
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/releases/tag/v7.34.0)
+
+  </Accordion>
+
+  <Accordion title="7.33.0 — 2025-12-09">
+
+    **Added:**
+    - `Scenario.getLanguage()` returns the language of the current scenario's feature file.
+
+    **Changed:**
+    - Cucumber Reports uploads now use Gzip encoding, reducing payload size.
+    - Tag expressions: the empty expression now renders as an empty string.
+
+    **Fixed:**
+    - Improved error messages for missing operands in tag expressions.
+    - JSON report now includes empty scenarios and backgrounds.
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/releases/tag/v7.33.0)
+
+  </Accordion>
+
+  <Accordion title="7.31.0 — 2025-10-27">
+
+    **Added:**
+    - New `UsageJsonFormatter` — activate with `--plugin usage-json` to get step definition usage statistics in JSON format.
+
+    **Changed:**
+    - `TimeLineFormatter`, `UsageFormatter`, and `UnusedFormatter` are now message-based, aligning with the unified message pipeline.
+    - Significant dependency updates: Gherkin v36, Messages v30.1, JUnit XML Formatter v0.10, HTML Formatter v22.
+
+    **Fixed:**
+    - Classpath scanner logging reduced.
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/releases/tag/v7.31.0)
+
+  </Accordion>
+
+  <Accordion title="7.29.0 — 2025-09-21">
+
+    **Added:**
+    - Cucumber now emits `Suggestion` messages for undefined steps.
+    - JUnit Platform Engine warns when the deprecated `surefire` naming strategy is used.
+    - Emoji dialect step annotation generation for the Java module.
+
+    **Changed:**
+    - `RerunFormatter`, `TeamCityPlugin`, `DefaultSummaryPrinter`, and `ProgressFormatter` are now message-based.
+
+    **Fixed:**
+    - `StepMatchArgumentsList` is now emitted for ambiguous steps.
+    - `TestSourcesModel` restored for compatibility with third-party plugins.
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/releases/tag/v7.29.0)
+
+  </Accordion>
+
+  <Accordion title="7.28.0 — 2025-09-01">
+
+    **Added:**
+    - Custom `UuidGenerator` can now be passed to `Runtime.Builder`.
+    - `--i18n-keywords` and `--i18n-languages` CLI options.
+    - JUnit Platform Engine warns when a selected line number does not exist in a feature file.
+    - JUnit Platform Engine now supports rerun files.
+
+    **Changed:**
+    - JSON formatter migrated to the message-based [cucumber-json-formatter](https://github.com/cucumber/cucumber-json-formatter).
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/releases/tag/v7.28.0)
+
+  </Accordion>
+
+  <Accordion title="7.24.0 — 2025-07-07">
+
+    **Added:**
+    - JUnit Platform Engine: option to include parameterised scenario names only when the scenario is actually parameterised.
+    - JUnit Platform Engine: option to control feature and scenario ordering.
+
+    **Changed:**
+    - Pretty Formatter is now message-based.
+    - JUnit Platform Engine updated to JUnit Platform 1.13.3 / JUnit Jupiter 5.13.3.
+
+    **Deprecated:**
+    - `cucumber-junit` (JUnit 4 runner) is now officially deprecated in favour of `cucumber-junit-platform-engine`.
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/releases/tag/v7.24.0)
+
+  </Accordion>
+
+  <Accordion title="7.23.0 — 2025-05-29">
+
+    **Added:**
+    - `surefire` naming strategy for the JUnit Platform Engine — improves test name readability in Maven Surefire < 3.5.3.
+    - Undefined step exception stacktraces no longer include framework frames for JUnit Platform Engine and TestNG.
+
+    **Changed:**
+    - Default example naming strategy changed to `number-and-pickle-if-parameterized`.
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/releases/tag/v7.23.0)
+
+  </Accordion>
+
+  <Accordion title="7.12.0 — 2023-04-29">
+
+    **Added:**
+    - Selectable UUID generator via SPI — `IncrementingUuidGenerator` is ~130× faster than `RandomUuidGenerator` for single-JVM runs.
+    - Support for directories containing exclusively rerun files using the `@path/to/rerun` syntax.
+    - `fixed.max-pool-size` configuration constant for the parallel execution pool.
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/releases/tag/v7.12.0)
+
+  </Accordion>
+
+  <Accordion title="7.11.0 — 2023-01-12">
+
+    **Added:**
+    - Spring Boot 3 and Spring 6 support.
+    - `fixed.max-pool-size` parallel execution property for the JUnit Platform Engine.
+
+    **Changed:**
+    - JUnit XML Formatter migrated to the message-based [cucumber/junit-xml-formatter](https://github.com/cucumber/junit-xml-formatter).
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/releases/tag/v7.11.0)
+
+  </Accordion>
+
+  <Accordion title="7.0.0 — 2021-10-06">
+
+    Major release. See the [full release announcement](https://github.com/cucumber/cucumber-jvm/blob/main/release-notes/v7.0.0.md) and the [Upgrading guide](/reference/upgrading) for migration details.
+
+    **Key changes:**
+    - Cucumber Expressions v11 — grammar rewritten; some edge-case expressions may break.
+    - `@BeforeAll` and `@AfterAll` hooks added to `cucumber-java`.
+    - `@Cucumber` annotation deprecated; use `@Suite` from `junit-platform-suite`.
+    - `--strict`/`--no-strict` removed; strict mode is always on.
+    - `TypeRegistryConfigurer` removed; use `@ParameterType`, `@DataTableType`, `@DocStringType`.
+    - `DataTable.asX()` methods now require a `@DataTableType` transformer.
+    - `cucumber-weld` and `cucumber-needle` modules removed.
+    - Bill of Materials (`cucumber-bom`) introduced.
+    - TestNG picks up properties from `testng.xml`.
+
+    [View on GitHub](https://github.com/cucumber/cucumber-jvm/releases/tag/v7.0.0)
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Semver policy
+
+Cucumber JVM's public API is defined as:
+
+- Any public class in the `cucumber.api` package or a subpackage thereof.
+- Any public class annotated with `@API(status = API.Status.STABLE)`.
+
+Changes to other classes — even public ones — are not considered breaking changes under this policy. If you depend on internal classes, you may need to adapt when upgrading patch or minor versions.
+
+For the complete history of every version, including versions prior to v7, see:
+
+- [CHANGELOG.md](https://github.com/cucumber/cucumber-jvm/blob/main/CHANGELOG.md) — v7.x releases
+- [release-notes/v6-CHANGELOG.md](https://github.com/cucumber/cucumber-jvm/blob/main/release-notes/v6-CHANGELOG.md) — v6.x releases
+- [release-notes/v5-CHANGELOG.md](https://github.com/cucumber/cucumber-jvm/blob/main/release-notes/v5-CHANGELOG.md) — v5.x releases
+- [GitHub Releases](https://github.com/cucumber/cucumber-jvm/releases) — all tagged releases with release notes

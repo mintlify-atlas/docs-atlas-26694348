@@ -1,0 +1,448 @@
+---
+title: "Cucumber JVM configuration properties complete reference"
+description: "Full reference for Cucumber JVM configuration properties: core options, JUnit Platform settings, parallel execution, and how to supply them."
+---
+
+Cucumber JVM reads configuration from multiple sources and merges them in a well-defined order of precedence. Understanding which properties are available and where to set them lets you control every aspect of feature discovery, execution order, filtering, reporting, and parallelism without touching your test source code.
+
+## How properties are resolved
+
+Properties are read in the following order of precedence (highest first):
+
+1. **CLI arguments** — take priority over everything else
+2. **System properties** (`-Dcucumber.filter.tags=@smoke`)
+3. **Environment variables** (`CUCUMBER_FILTER_TAGS=@smoke`)
+4. **`@CucumberOptions` annotation** — on JUnit 4 runner classes
+5. **`cucumber.properties` file** — on the classpath root
+
+<Note>
+For the **JUnit Platform Engine** (`cucumber-junit-platform-engine`), properties are supplied via `junit-platform.properties` rather than `cucumber.properties`. JUnit Platform reads them through its own configuration parameter mechanism. All the same property names apply.
+</Note>
+
+Each property name also has `UPPER_CASE` and `snake_case` equivalents recognised automatically. For example, `cucumber.ansi-colors.disabled` is also accepted as `CUCUMBER_ANSI_COLORS_DISABLED` or `cucumber_ansi_colors_disabled`.
+
+<Tabs>
+  <Tab title="cucumber.properties">
+    ```properties title="src/test/resources/cucumber.properties"
+    cucumber.filter.tags=@smoke and not @wip
+    cucumber.glue=com.example.steps
+    cucumber.plugin=pretty,html:target/cucumber-reports/report.html
+    ```
+  </Tab>
+  <Tab title="System property">
+    ```bash
+    mvn test -Dcucumber.filter.tags="@smoke and not @wip"
+    ```
+  </Tab>
+  <Tab title="Environment variable">
+    ```bash
+    export CUCUMBER_FILTER_TAGS="@smoke and not @wip"
+    mvn test
+    ```
+  </Tab>
+  <Tab title="@CucumberOptions">
+    ```java title="src/test/java/RunCucumberTest.java"
+    import io.cucumber.junit.Cucumber;
+    import io.cucumber.junit.CucumberOptions;
+    import org.junit.runner.RunWith;
+
+    @RunWith(Cucumber.class)
+    @CucumberOptions(
+        tags = "@smoke and not @wip",
+        glue = "com.example.steps",
+        plugin = {"pretty", "html:target/cucumber-reports/report.html"}
+    )
+    public class RunCucumberTest {}
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Core properties
+
+### cucumber.ansi-colors.disabled
+
+<ParamField query="cucumber.ansi-colors.disabled" type="boolean" default="false">
+  Disables ANSI escape codes in console output. Set to `true` on terminals or CI systems that do not support colour output.
+
+  ```properties
+  cucumber.ansi-colors.disabled=true
+  ```
+</ParamField>
+
+### cucumber.execution.dry-run
+
+<ParamField query="cucumber.execution.dry-run" type="boolean" default="false">
+  Skips executing step definitions and reports every step as skipped. Useful for verifying that all steps are matched without running any real logic.
+
+  ```properties
+  cucumber.execution.dry-run=true
+  ```
+</ParamField>
+
+### cucumber.execution.limit
+
+<ParamField query="cucumber.execution.limit" type="integer">
+  Limits the number of scenarios executed before stopping. **CLI only.**
+
+  ```properties
+  cucumber.execution.limit=5
+  ```
+</ParamField>
+
+### cucumber.execution.order
+
+<ParamField query="cucumber.execution.order" type="string" default="lexical">
+  Controls the order in which scenarios are executed. **CLI only** for the core runner; also supported by the JUnit Platform Engine.
+
+  Accepted values:
+
+  | Value | Description |
+  |---|---|
+  | `lexical` | Alphabetical by feature URI, top-to-bottom within a file |
+  | `reverse` | Same as lexical but every container is reversed |
+  | `random` | Random order across the run |
+  | `random:<seed>` | Random with a fixed seed for reproducibility |
+
+  ```properties
+  cucumber.execution.order=random:20090120
+  ```
+</ParamField>
+
+### cucumber.execution.wip
+
+<ParamField query="cucumber.execution.wip" type="boolean" default="false">
+  "Work in progress" mode — fails the build if **any** scenario passes. Use together with a tag filter to ensure all scenarios tagged `@wip` are still failing (i.e. not yet done). **CLI only.**
+
+  ```properties
+  cucumber.execution.wip=true
+  ```
+</ParamField>
+
+### cucumber.features
+
+<ParamField query="cucumber.features" type="string">
+  Comma-separated list of feature paths to load. Supports file paths, classpath URIs, line selectors, and rerun files.
+
+  ```properties
+  # Single feature file
+  cucumber.features=path/to/features
+
+  # Specific scenario by line number
+  cucumber.features=path/to/example.feature:42
+
+  # Classpath URI
+  cucumber.features=classpath:com/example/features
+
+  # Rerun file
+  cucumber.features=@path/to/rerun.txt
+  ```
+
+  <Warning>
+  When used with the JUnit Platform Engine, setting `cucumber.features` causes Cucumber to ignore all other JUnit Platform discovery selectors (e.g. `@SelectPackages`). This can result in scenarios running twice when combined with the Suite Engine.
+  </Warning>
+</ParamField>
+
+### cucumber.filter.name
+
+<ParamField query="cucumber.filter.name" type="string">
+  A regular expression. Only scenarios whose names match are executed. Combined with `cucumber.filter.tags` using **and** semantics.
+
+  ```properties
+  cucumber.filter.name=^Hello (World|Cucumber)$
+  ```
+</ParamField>
+
+### cucumber.filter.tags
+
+<ParamField query="cucumber.filter.tags" type="string">
+  A [Cucumber tag expression](https://cucumber.io/docs/cucumber/api/#tags). Only scenarios with matching tags are executed. Combined with `cucumber.filter.name` using **and** semantics.
+
+  ```properties
+  cucumber.filter.tags=@Cucumber and not (@Gherkin or @Zucchini)
+  ```
+</ParamField>
+
+### cucumber.glue
+
+<ParamField query="cucumber.glue" type="string">
+  Comma-separated list of package names where Cucumber scans for step definitions, hooks, and other glue code.
+
+  ```properties
+  cucumber.glue=com.example.steps,com.example.hooks
+  ```
+</ParamField>
+
+### cucumber.plugin
+
+<ParamField query="cucumber.plugin" type="string">
+  Comma-separated list of plugin strings. Each string is either a built-in plugin name (optionally with an output path) or a fully-qualified class name.
+
+  ```properties
+  cucumber.plugin=pretty,json:target/cucumber.json,html:target/report.html
+  cucumber.plugin=com.example.MyCustomPlugin:target/custom-output.xml
+  ```
+</ParamField>
+
+### cucumber.object-factory
+
+<ParamField query="cucumber.object-factory" type="string">
+  Fully-qualified class name of a custom `ObjectFactory` implementation for creating instances of glue classes.
+
+  ```properties
+  cucumber.object-factory=com.example.MyObjectFactory
+  ```
+</ParamField>
+
+### cucumber.uuid-generator
+
+<ParamField query="cucumber.uuid-generator" type="string" default="io.cucumber.core.eventbus.RandomUuidGenerator">
+  Fully-qualified class name of a UUID generator registered as a service provider. Controls how event UUIDs are generated.
+
+  | Generator | Characteristics | Throughput |
+  |---|---|---|
+  | `io.cucumber.core.eventbus.RandomUuidGenerator` | Thread-safe, collision-free, multi-JVM | ~1 M/s |
+  | `io.cucumber.core.eventbus.IncrementingUuidGenerator` | Thread-safe, collision-free, single-JVM | ~130 M/s |
+
+  ```properties
+  cucumber.uuid-generator=io.cucumber.core.eventbus.IncrementingUuidGenerator
+  ```
+</ParamField>
+
+### cucumber.snippet-type
+
+<ParamField query="cucumber.snippet-type" type="string" default="underscore">
+  Format used when generating step definition snippets for undefined steps. Accepted values: `underscore` or `camelcase`.
+
+  ```properties
+  cucumber.snippet-type=camelcase
+  ```
+</ParamField>
+
+---
+
+## Publish properties
+
+These properties control publishing test results to [Cucumber Reports](https://reports.cucumber.io).
+
+### cucumber.publish.enabled
+
+<ParamField query="cucumber.publish.enabled" type="boolean" default="false">
+  Enables publishing of test results to Cucumber Reports after the run.
+
+  ```properties
+  cucumber.publish.enabled=true
+  ```
+</ParamField>
+
+### cucumber.publish.quiet
+
+<ParamField query="cucumber.publish.quiet" type="boolean" default="false">
+  Suppresses the banner printed after execution that advertises the publish URL.
+
+  ```properties
+  cucumber.publish.quiet=true
+  ```
+</ParamField>
+
+### cucumber.publish.token
+
+<ParamField query="cucumber.publish.token" type="string">
+  Authentication token for publishing to a private Cucumber Reports account.
+
+  ```properties
+  cucumber.publish.token=my-secret-token
+  ```
+</ParamField>
+
+### cucumber.publish.url
+
+<ParamField query="cucumber.publish.url" type="string">
+  Override the URL to which results are published. Useful for self-hosted Cucumber Reports instances.
+
+  ```properties
+  cucumber.publish.url=https://reports.example.com/api/reports
+  ```
+</ParamField>
+
+---
+
+## JUnit Platform Engine properties
+
+These properties are specific to `cucumber-junit-platform-engine` and are typically set in `junit-platform.properties`.
+
+### cucumber.junit-platform.naming-strategy
+
+<ParamField query="cucumber.junit-platform.naming-strategy" type="string" default="short">
+  Controls how test names appear in build tool and IDE reports.
+
+  | Value | Description |
+  |---|---|
+  | `short` | Only the scenario or example name |
+  | `long` | Feature name + scenario name (recommended for Surefire ≥ 3.5.4) |
+  | `surefire` | Workaround format for Surefire < 3.5.3 |
+
+  ```properties title="junit-platform.properties"
+  cucumber.junit-platform.naming-strategy=long
+  ```
+
+  ```xml title="pom.xml (Maven Surefire)"
+  <configurationParameters>
+    cucumber.junit-platform.naming-strategy=long
+  </configurationParameters>
+  ```
+</ParamField>
+
+### cucumber.junit-platform.naming-strategy.*.example-name
+
+<ParamField query="cucumber.junit-platform.naming-strategy.short.example-name" type="string" default="number-and-pickle-if-parameterized">
+  Controls how scenario outline examples are named within each naming strategy variant.
+
+  Accepted values: `number`, `number-and-pickle-if-parameterized`, `pickle`
+
+  ```properties
+  cucumber.junit-platform.naming-strategy.long.example-name=pickle
+  cucumber.junit-platform.naming-strategy.short.example-name=number
+  ```
+</ParamField>
+
+### cucumber.junit-platform.discovery.as-root-engine
+
+<ParamField query="cucumber.junit-platform.discovery.as-root-engine" type="boolean" default="true">
+  Enables or disables Cucumber test discovery when used as a root engine. Set to `false` as a workaround for SBT compatibility issues.
+
+  ```properties
+  cucumber.junit-platform.discovery.as-root-engine=false
+  ```
+</ParamField>
+
+---
+
+## Parallel execution properties
+
+Parallel execution is disabled by default and must be explicitly enabled via the JUnit Platform Engine.
+
+### cucumber.execution.parallel.enabled
+
+<ParamField query="cucumber.execution.parallel.enabled" type="boolean" default="false">
+  Enables parallel execution of scenarios.
+
+  ```properties
+  cucumber.execution.parallel.enabled=true
+  ```
+</ParamField>
+
+### cucumber.execution.parallel.config.strategy
+
+<ParamField query="cucumber.execution.parallel.config.strategy" type="string" default="dynamic">
+  Selects the parallelism configuration strategy: `dynamic`, `fixed`, or `custom`.
+
+  ```properties
+  cucumber.execution.parallel.config.strategy=fixed
+  ```
+</ParamField>
+
+### cucumber.execution.parallel.config.dynamic.factor
+
+<ParamField query="cucumber.execution.parallel.config.dynamic.factor" type="number" default="1.0">
+  Multiplier applied to the number of available CPU cores to compute the desired parallelism. Used when strategy is `dynamic`.
+
+  ```properties
+  cucumber.execution.parallel.config.dynamic.factor=2.0
+  ```
+</ParamField>
+
+### cucumber.execution.parallel.config.fixed.parallelism
+
+<ParamField query="cucumber.execution.parallel.config.fixed.parallelism" type="integer">
+  Desired number of parallel workers. Used when strategy is `fixed`.
+
+  ```properties
+  cucumber.execution.parallel.config.fixed.parallelism=4
+  ```
+</ParamField>
+
+### cucumber.execution.parallel.config.fixed.max-pool-size
+
+<ParamField query="cucumber.execution.parallel.config.fixed.max-pool-size" type="integer">
+  Maximum thread pool size for the underlying ForkJoin pool. Used when strategy is `fixed`.
+
+  ```properties
+  cucumber.execution.parallel.config.fixed.max-pool-size=8
+  ```
+</ParamField>
+
+### cucumber.execution.parallel.config.custom.class
+
+<ParamField query="cucumber.execution.parallel.config.custom.class" type="string">
+  Fully-qualified class name of a custom `ParallelExecutionConfigurationStrategy` implementation.
+
+  ```properties
+  cucumber.execution.parallel.config.custom.class=com.example.MyParallelStrategy
+  ```
+</ParamField>
+
+### cucumber.execution.execution-mode.feature
+
+<ParamField query="cucumber.execution.execution-mode.feature" type="string" default="concurrent">
+  Controls whether scenarios within a single feature execute concurrently or sequentially on the same thread.
+
+  | Value | Description |
+  |---|---|
+  | `concurrent` | Scenarios run in parallel on any available thread (default) |
+  | `same_thread` | Scenarios run sequentially on the same thread as the feature — restores JUnit 4 behaviour |
+
+  ```properties
+  cucumber.execution.execution-mode.feature=same_thread
+  ```
+</ParamField>
+
+---
+
+## Exclusive resource properties
+
+Exclusive resources prevent race conditions when multiple scenarios share state. Tags are mapped to named locks.
+
+### cucumber.execution.exclusive-resources.\<tag\>.read-write
+
+<ParamField query="cucumber.execution.exclusive-resources.<tag-name>.read-write" type="string">
+  Acquires a **read-write** lock on the named resource for all scenarios tagged with `<tag-name>`. The `@` symbol is not included in the property key.
+
+  ```properties
+  cucumber.execution.exclusive-resources.writes-db.read-write=com.example.Database
+  ```
+</ParamField>
+
+### cucumber.execution.exclusive-resources.\<tag\>.read
+
+<ParamField query="cucumber.execution.exclusive-resources.<tag-name>.read" type="string">
+  Acquires a **read** lock on the named resource. Multiple scenarios holding a read lock can run concurrently; a scenario holding a read-write lock on the same resource will not.
+
+  ```properties
+  cucumber.execution.exclusive-resources.reads-db.read=com.example.Database
+  ```
+</ParamField>
+
+**Example: preventing concurrent access to system properties**
+
+```gherkin title="features/system.feature"
+@writes-system-properties
+Scenario: mutates system properties
+  Given I set a system property
+
+@reads-system-properties
+Scenario: reads system properties
+  Given I read a system property
+```
+
+```properties title="junit-platform.properties"
+cucumber.execution.exclusive-resources.writes-system-properties.read-write=java.lang.System.properties
+cucumber.execution.exclusive-resources.reads-system-properties.read=java.lang.System.properties
+```
+
+To run a scenario in complete isolation (no other scenario runs concurrently), use the JUnit Platform global key:
+
+```properties
+cucumber.execution.exclusive-resources.isolated.read-write=org.junit.platform.engine.support.hierarchical.ExclusiveResource.GLOBAL_KEY
+```

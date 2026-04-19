@@ -1,0 +1,345 @@
+---
+title: "How to install Cucumber JVM with Maven or Gradle builds"
+description: "Add Cucumber JVM dependencies to your project using the BOM for version management, and choose the optional modules you need for your test setup."
+---
+
+Cucumber JVM is distributed as a set of focused Maven artifacts under the `io.cucumber` group. You pick only the modules you need — a test runner, a language binding, and optionally a dependency injection adapter. The `cucumber-bom` Bill of Materials keeps all artifact versions consistent so you never have to manually align them.
+
+<Note>
+  Cucumber JVM 8.x requires **Java 17 or later**. If you are on Java 11, use the latest 7.x release instead.
+</Note>
+
+## Using the Bill of Materials
+
+Importing `cucumber-bom` into your dependency management block means you can declare individual Cucumber dependencies without specifying a version. The BOM ensures every artifact resolves to the same tested release.
+
+<Tabs>
+  <Tab title="Maven">
+    Add the BOM to your `<dependencyManagement>` section, then declare individual dependencies in `<dependencies>` without a `<version>` tag.
+
+    ```xml pom.xml
+    <properties>
+        <cucumber.version>7.34.3</cucumber.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.cucumber</groupId>
+                <artifactId>cucumber-bom</artifactId>
+                <version>${cucumber.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Core language binding -->
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-java</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- JUnit 5 test engine (recommended runner) -->
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-junit-platform-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    Use Gradle's platform BOM import in `build.gradle.kts` to pin versions, then add individual dependencies without version numbers.
+
+    ```kotlin build.gradle.kts
+    val cucumberVersion = "7.34.3"
+
+    dependencies {
+        testImplementation(platform("io.cucumber:cucumber-bom:$cucumberVersion"))
+
+        // Core language binding
+        testImplementation("io.cucumber:cucumber-java")
+
+        // JUnit 5 test engine (recommended runner)
+        testImplementation("io.cucumber:cucumber-junit-platform-engine")
+    }
+
+    tasks.test {
+        useJUnitPlatform()
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Core dependencies
+
+Every Cucumber JVM project needs at minimum two artifacts: a language binding and a test runner.
+
+### `cucumber-java`
+
+Provides the annotation-based step definition API (`@Given`, `@When`, `@Then`) and all transformer annotations (`@ParameterType`, `@DataTableType`, `@DocStringType`). This is the standard language binding for Java projects.
+
+<Tabs>
+  <Tab title="Maven">
+    ```xml pom.xml
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-java</artifactId>
+        <scope>test</scope>
+    </dependency>
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    ```kotlin build.gradle.kts
+    testImplementation("io.cucumber:cucumber-java")
+    ```
+  </Tab>
+</Tabs>
+
+### `cucumber-junit-platform-engine`
+
+Integrates Cucumber with the JUnit 5 Platform, enabling test discovery and execution from IDEs, Maven Surefire, and Gradle. This is the recommended runner for all new projects.
+
+<Tabs>
+  <Tab title="Maven">
+    ```xml pom.xml
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-junit-platform-engine</artifactId>
+        <scope>test</scope>
+    </dependency>
+    ```
+
+    Because Maven Surefire does not yet support non-class-based JUnit Platform test discovery, also add the JUnit Platform Suite Engine and create a `@Suite`-annotated runner class. See the [JUnit 5 runner guide](/runners/junit5) for details.
+
+    ```xml pom.xml
+    <!-- Required for the @Suite runner workaround -->
+    <dependency>
+        <groupId>org.junit.platform</groupId>
+        <artifactId>junit-platform-suite</artifactId>
+        <scope>test</scope>
+    </dependency>
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    ```kotlin build.gradle.kts
+    testImplementation("io.cucumber:cucumber-junit-platform-engine")
+    testImplementation("org.junit.platform:junit-platform-suite")
+    ```
+  </Tab>
+</Tabs>
+
+## Optional modules
+
+Add only the modules that match your project's requirements. All versions are managed by the BOM.
+
+| Module | Purpose |
+|--------|---------|
+| `cucumber-spring` | Spring and Spring Boot dependency injection for step definitions |
+| `cucumber-guice` | Google Guice dependency injection |
+| `cucumber-picocontainer` | Lightweight PicoContainer dependency injection |
+| `cucumber-testng` | TestNG runner integration |
+| `cucumber-junit` | JUnit 4 runner — maintenance mode, prefer JUnit 5 for new projects |
+| `cucumber-cdi2` | CDI 2 / Jakarta CDI dependency injection |
+| `cucumber-deltaspike` | Apache DeltaSpike CDI integration |
+
+### `cucumber-spring`
+
+Enables Spring's `ApplicationContext` for step definitions. Annotate your step definition class with `@CucumberContextConfiguration` and `@SpringBootTest` to wire Spring beans into your steps.
+
+<Tabs>
+  <Tab title="Maven">
+    ```xml pom.xml
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-spring</artifactId>
+        <scope>test</scope>
+    </dependency>
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    ```kotlin build.gradle.kts
+    testImplementation("io.cucumber:cucumber-spring")
+    ```
+  </Tab>
+</Tabs>
+
+### `cucumber-guice`
+
+Provides Guice-backed object creation for step definition classes, allowing `@Inject`-annotated fields to be populated automatically.
+
+<Tabs>
+  <Tab title="Maven">
+    ```xml pom.xml
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-guice</artifactId>
+        <scope>test</scope>
+    </dependency>
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    ```kotlin build.gradle.kts
+    testImplementation("io.cucumber:cucumber-guice")
+    ```
+  </Tab>
+</Tabs>
+
+### `cucumber-picocontainer`
+
+The simplest dependency injection option. PicoContainer automatically injects shared state objects into step definition constructors with no configuration required.
+
+<Tabs>
+  <Tab title="Maven">
+    ```xml pom.xml
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-picocontainer</artifactId>
+        <scope>test</scope>
+    </dependency>
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    ```kotlin build.gradle.kts
+    testImplementation("io.cucumber:cucumber-picocontainer")
+    ```
+  </Tab>
+</Tabs>
+
+### `cucumber-testng`
+
+Integrates Cucumber with TestNG. Extend `AbstractTestNGCucumberTests` to create a TestNG-compatible runner.
+
+<Tabs>
+  <Tab title="Maven">
+    ```xml pom.xml
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-testng</artifactId>
+        <scope>test</scope>
+    </dependency>
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    ```kotlin build.gradle.kts
+    testImplementation("io.cucumber:cucumber-testng")
+    ```
+  </Tab>
+</Tabs>
+
+### `cucumber-junit` (JUnit 4, deprecated)
+
+<Warning>
+  JUnit 4 support is in maintenance mode. Use `cucumber-junit-platform-engine` with JUnit 5 for all new projects.
+</Warning>
+
+<Tabs>
+  <Tab title="Maven">
+    ```xml pom.xml
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-junit</artifactId>
+        <scope>test</scope>
+    </dependency>
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    ```kotlin build.gradle.kts
+    testImplementation("io.cucumber:cucumber-junit")
+    ```
+  </Tab>
+</Tabs>
+
+## Complete Maven example
+
+The snippet below shows a typical `pom.xml` configuration for a Spring Boot project using JUnit 5.
+
+```xml pom.xml
+<properties>
+    <cucumber.version>7.34.3</cucumber.version>
+    <junit.platform.version>1.10.2</junit.platform.version>
+</properties>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-bom</artifactId>
+            <version>${cucumber.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit</groupId>
+            <artifactId>junit-bom</artifactId>
+            <version>${junit.platform.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-java</artifactId>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-junit-platform-engine</artifactId>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.junit.platform</groupId>
+        <artifactId>junit-platform-suite</artifactId>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <scope>test</scope>
+    </dependency>
+    <!-- Optional: Spring Boot integration -->
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-spring</artifactId>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+## Complete Gradle example
+
+```kotlin build.gradle.kts
+val cucumberVersion = "7.34.3"
+
+dependencies {
+    testImplementation(platform("io.cucumber:cucumber-bom:$cucumberVersion"))
+    testImplementation(platform("org.junit:junit-bom:1.10.2"))
+
+    testImplementation("io.cucumber:cucumber-java")
+    testImplementation("io.cucumber:cucumber-junit-platform-engine")
+    testImplementation("org.junit.platform:junit-platform-suite")
+    testImplementation("org.junit.jupiter:junit-jupiter")
+
+    // Optional: Spring Boot integration
+    testImplementation("io.cucumber:cucumber-spring")
+}
+
+tasks.test {
+    useJUnitPlatform()
+    systemProperty("cucumber.junit-platform.naming-strategy", "long")
+}
+```
+
+## Java version requirement
+
+Cucumber JVM 8.x sets the baseline at **Java 17**. If your project targets an earlier JDK, use the latest 7.x release (the current stable series as of this writing).
+
+<Tip>
+  Check the latest stable version on [Maven Central](https://central.sonatype.com/artifact/io.cucumber/cucumber-java) before pinning a version in your BOM import.
+</Tip>

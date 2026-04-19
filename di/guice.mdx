@@ -1,0 +1,133 @@
+---
+title: "Using Google Guice with Cucumber JVM"
+description: "Inject dependencies into Cucumber step definitions with Google Guice using scenario scope, singleton scope, and custom module bindings."
+---
+
+The `cucumber-guice` module integrates Google Guice with Cucumber JVM. It creates a single Guice injector for the entire test run and adds a scenario scope that is started before each scenario and destroyed after it. This lets you share state within a scenario without carrying it across scenario boundaries.
+
+## Adding the dependency
+
+Add `cucumber-guice` to your Maven `pom.xml` and use the `cucumber-bom` for version management:
+
+```xml pom.xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-bom</artifactId>
+      <version>${cucumber.version}</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+
+<dependencies>
+  <dependency>
+    <groupId>io.cucumber</groupId>
+    <artifactId>cucumber-guice</artifactId>
+    <scope>test</scope>
+  </dependency>
+</dependencies>
+```
+
+Once `cucumber-guice` is on the classpath, Cucumber automatically uses Guice to instantiate all step definition classes.
+
+## Scoping step definitions
+
+You control the lifecycle of each step definition class by choosing a scope. There are two practical options.
+
+### Scenario scope
+
+Use `@ScenarioScoped` when a step definition class holds state that should be isolated to a single scenario. Cucumber creates exactly one instance per scenario and discards it afterwards.
+
+```java src/test/java/com/example/ScenarioScopedSteps.java
+import io.cucumber.guice.ScenarioScoped;
+
+import javax.inject.Inject;
+
+@ScenarioScoped
+public class ScenarioScopedSteps {
+
+    private final MyStatefulService myStatefulService;
+
+    @Inject
+    public ScenarioScopedSteps(MyStatefulService myStatefulService) {
+        this.myStatefulService = myStatefulService;
+    }
+
+    // step definitions ...
+}
+```
+
+### Singleton scope
+
+Use `@Singleton` for stateless step definitions or for expensive resources (such as HTTP clients) that are safe to reuse across all scenarios. A singleton is created once and lives for the entire test run.
+
+```java src/test/java/com/example/MyStatelessSteps.java
+import javax.inject.Inject;
+import javax.inject.Provider;
+import javax.inject.Singleton;
+
+import io.cucumber.java.en.Given;
+
+@Singleton
+public class MyStatelessSteps {
+
+    private final Provider<MyStatefulObject> providerMyStatefulObject;
+
+    @Inject
+    public MyStatelessSteps(Provider<MyStatefulObject> providerMyStatefulObject) {
+        this.providerMyStatefulObject = providerMyStatefulObject;
+    }
+
+    @Given("I have {int} {word} in my belly")
+    public void i_have_n_things_in_my_belly(int n, String what) {
+        providerMyStatefulObject.get().iHaveCukesInMyBelly(n);
+    }
+}
+```
+
+<Tip>
+Injecting a `Provider<T>` into a singleton lets it lazily fetch a scenario-scoped instance on each step invocation. This is the standard Guice pattern for [mixing scopes](https://github.com/google/guice/wiki/InjectingProviders#providers-for-mixing-scopes).
+</Tip>
+
+<Note>
+It is not recommended to leave step definition classes unscoped. Without a scope annotation, Guice creates a new instance for every step within a scenario, which makes it impossible to store state between steps.
+</Note>
+
+## Providing a custom injector
+
+By default, `cucumber-guice` creates a minimal injector that only provides the scenario scope binding. To wire your own Guice modules into the injector, implement `io.cucumber.guice.InjectorSource`.
+
+```java src/test/java/com/example/YourInjectorSource.java
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.Stage;
+import io.cucumber.guice.CucumberModules;
+import io.cucumber.guice.InjectorSource;
+
+public class YourInjectorSource implements InjectorSource {
+
+    @Override
+    public Injector getInjector() {
+        return Guice.createInjector(
+            Stage.PRODUCTION,
+            CucumberModules.createScenarioModule(),
+            new YourModule()
+        );
+    }
+}
+```
+
+`CucumberModules.createScenarioModule()` provides the required `ScenarioScope` binding. Always include it when building a custom injector; omitting it causes a startup error.
+
+Cucumber discovers `InjectorSource` implementations automatically via the `ServiceLoader` mechanism — place your class on the classpath and it will be picked up.
+
+<Info>
+The injector must provide a binding for `io.cucumber.guice.ScenarioScope`. It should also provide a binding for the `@ScenarioScoped` annotation if you use it. `CucumberModules.createScenarioModule()` handles both requirements.
+</Info>
+
+## Migration note
+
+In versions 1.1.7 and earlier, a new injector was created for every scenario. From version 1.1.8 onwards, a single injector is created once and scenario scope is used to isolate per-scenario state. If you are migrating from an older version, replace `@Singleton` annotations with `@ScenarioScoped` on classes that held per-scenario state, and update any module bindings from `Scopes.SINGLETON` to `CucumberScopes.SCENARIO`.

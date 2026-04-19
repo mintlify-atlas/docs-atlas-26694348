@@ -1,0 +1,317 @@
+---
+title: "Running Cucumber with JUnit 5 Platform Engine"
+description: "Run Cucumber with the JUnit Platform Engine: suite setup, configuration parameters, Maven and Gradle workarounds, tag filtering, and rerun support."
+---
+
+The `cucumber-junit-platform-engine` module integrates Cucumber with the JUnit Platform (JUnit 5), enabling IDEs, Maven, and Gradle to discover and execute feature files through the standard JUnit Platform interface. This approach is the recommended way to run Cucumber on the JVM and supersedes the legacy JUnit 4 runner.
+
+## Adding the dependency
+
+Add `cucumber-junit-platform-engine` to your project. Use the `cucumber-bom` for dependency management to keep versions consistent.
+
+<Tabs>
+  <Tab title="Maven">
+    ```xml pom.xml
+    <dependencyManagement>
+      <dependencies>
+        <dependency>
+          <groupId>io.cucumber</groupId>
+          <artifactId>cucumber-bom</artifactId>
+          <version>${cucumber.version}</version>
+          <type>pom</type>
+          <scope>import</scope>
+        </dependency>
+      </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+      <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-junit-platform-engine</artifactId>
+        <scope>test</scope>
+      </dependency>
+    </dependencies>
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    ```kotlin build.gradle.kts
+    dependencies {
+        testImplementation(platform("io.cucumber:cucumber-bom:$cucumberVersion"))
+        testImplementation("io.cucumber:cucumber-junit-platform-engine")
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Creating a suite runner class
+
+Maven Surefire and Gradle do not yet support discovery of non-class-based tests directly. The recommended workaround is to use the **JUnit Platform Suite Engine**, which wraps Cucumber in a standard JUnit suite class that build tools can discover.
+
+Add the `junit-platform-suite` dependency:
+
+<Tabs>
+  <Tab title="Maven">
+    ```xml pom.xml
+    <dependency>
+      <groupId>org.junit.platform</groupId>
+      <artifactId>junit-platform-suite</artifactId>
+      <scope>test</scope>
+    </dependency>
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    ```kotlin build.gradle.kts
+    testImplementation("org.junit.platform:junit-platform-suite")
+    ```
+  </Tab>
+</Tabs>
+
+Then create a runner class annotated with `@Suite`, `@IncludeEngines`, and `@SelectPackages`:
+
+```java src/test/java/com/example/RunCucumberTest.java
+package com.example;
+
+import org.junit.platform.suite.api.ConfigurationParameter;
+import org.junit.platform.suite.api.IncludeEngines;
+import org.junit.platform.suite.api.SelectPackages;
+import org.junit.platform.suite.api.Suite;
+
+import static io.cucumber.junit.platform.engine.Constants.GLUE_PROPERTY_NAME;
+
+@Suite
+@IncludeEngines("cucumber")
+@SelectPackages("com.example")
+@ConfigurationParameter(key = GLUE_PROPERTY_NAME, value = "com.example")
+public class RunCucumberTest {
+}
+```
+
+The `@SelectPackages` annotation tells the suite which package to scan for feature files. The `@ConfigurationParameter` annotation sets the glue path where Cucumber looks for step definitions and hooks.
+
+## Configuration parameters
+
+Cucumber reads configuration from `junit-platform.properties` on the classpath, from `@ConfigurationParameter` annotations on the suite class, or from system properties. Common parameters include:
+
+| Property | Description |
+|---|---|
+| `cucumber.glue` | Comma-separated package names containing step definitions |
+| `cucumber.features` | Comma-separated paths to feature files or directories |
+| `cucumber.plugin` | Output plugins, e.g. `pretty`, `json:target/report.json` |
+| `cucumber.filter.tags` | Tag expression to filter which scenarios run |
+| `cucumber.filter.name` | Regex to filter scenarios by name |
+| `cucumber.execution.dry-run` | Skip step execution; validate mappings only |
+
+```properties src/test/resources/junit-platform.properties
+cucumber.glue=com.example.steps
+cucumber.plugin=pretty, json:target/cucumber-report.json
+cucumber.filter.tags=not @Disabled
+```
+
+<Note>
+When `cucumber.features` is set, Cucumber ignores all JUnit Platform discovery selectors. Prefer using `@SelectPackages` or `@SelectClasspathResource` on the suite class instead.
+</Note>
+
+## Maven Surefire configuration
+
+Because Surefire reports results in `<Class Name> - <Method Name>` format, scenario names can be truncated in reports. Use the `cucumber.junit-platform.naming-strategy` property to improve readability.
+
+<Tabs>
+  <Tab title="Surefire 3.5.4+">
+    ```xml pom.xml
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-surefire-plugin</artifactId>
+      <version>3.5.4</version>
+      <configuration>
+        <properties>
+          <configurationParameters>
+            cucumber.junit-platform.naming-strategy=long
+          </configurationParameters>
+        </properties>
+      </configuration>
+    </plugin>
+    ```
+  </Tab>
+  <Tab title="Surefire 3.5.2 and below">
+    ```xml pom.xml
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-surefire-plugin</artifactId>
+      <version>3.5.2</version>
+      <configuration>
+        <properties>
+          <configurationParameters>
+            cucumber.junit-platform.naming-strategy=surefire
+          </configurationParameters>
+        </properties>
+      </configuration>
+    </plugin>
+    ```
+  </Tab>
+</Tabs>
+
+The `long` strategy includes the full hierarchy in each test name (feature name, scenario name, example number), making reports easy to read. The legacy `surefire` strategy is only needed for Surefire 3.5.2 and below.
+
+## Gradle configuration
+
+Gradle requires that system properties be forwarded explicitly to the test task. Add the following to your build file so Cucumber properties passed on the command line are picked up:
+
+```kotlin build.gradle.kts
+tasks.test {
+    useJUnitPlatform()
+    systemProperty("cucumber.junit-platform.naming-strategy", "long")
+    systemProperty("cucumber.features", System.getProperty("cucumber.features"))
+    systemProperty("cucumber.filter.tags", System.getProperty("cucumber.filter.tags"))
+    systemProperty("cucumber.filter.name", System.getProperty("cucumber.filter.name"))
+    systemProperty("cucumber.plugin", System.getProperty("cucumber.plugin"))
+}
+```
+
+## Running a single scenario or feature from the CLI
+
+The `cucumber.features` property lets you target a specific feature file or a single scenario by line number.
+
+<Tabs>
+  <Tab title="Maven">
+    ```bash
+    mvn test \
+      -Dsurefire.includeJUnit5Engines=cucumber \
+      -Dcucumber.plugin=pretty \
+      -Dcucumber.features=path/to/example.feature:10
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    ```bash
+    gradle test --rerun-tasks --info \
+      -Dcucumber.plugin=pretty \
+      -Dcucumber.features=path/to/example.feature:10
+    ```
+  </Tab>
+</Tabs>
+
+The `:10` suffix selects the scenario starting at line 10. Omit the line number to run the entire feature file.
+
+## Skipping scenarios with @Disabled
+
+JUnit Jupiter's `@Disabled` annotation does not apply to Cucumber scenarios. To reproduce the same behaviour, set the `cucumber.filter.tags` property to exclude any scenario tagged `@Disabled`:
+
+```properties src/test/resources/junit-platform.properties
+cucumber.filter.tags=not @Disabled
+```
+
+Any scenario tagged `@Disabled` in a feature file will then be skipped at runtime.
+
+<Note>
+`cucumber.filter.tags` uses [Cucumber tag expressions](https://cucumber.io/docs/cucumber/api/#tags), not JUnit tag expressions. The syntax is similar but not identical.
+</Note>
+
+## JUnit tags and Gherkin tags
+
+Cucumber maps Gherkin tags to JUnit tags automatically. The `@` prefix is stripped, so `@Smoke` becomes the JUnit tag `Smoke`.
+
+```gherkin example.feature
+@Smoke
+@Ignore
+Scenario: A tagged scenario
+  Given I tag a scenario
+  When I select tests with that tag for execution
+  Then my tagged scenario is executed
+
+@Sanity
+Scenario: Another tagged scenario
+  Given I tag a scenario
+  When I select tests with that tag for execution
+  Then my tagged scenario is executed
+```
+
+With Maven Surefire you can filter by JUnit tags using the `groups` and `excludedGroups` parameters, which accept [JUnit 5 tag expressions](https://docs.junit.org/current/running-tests/tags.html#expressions):
+
+```bash
+mvn verify -DexcludedGroups="Ignore" -Dgroups="Smoke | Sanity"
+```
+
+## Rerunning failed scenarios
+
+Failed scenarios can be rerun using a rerun file written by the `rerun` plugin, then consumed by a second suite class.
+
+<Steps>
+  <Step title="Write a rerun file in the first suite">
+    Enable the `rerun` plugin on your main suite to record failures:
+
+    ```java src/test/java/com/example/RunCucumber.java
+    package com.example;
+
+    import org.junit.platform.suite.api.ConfigurationParameter;
+    import org.junit.platform.suite.api.IncludeEngines;
+    import org.junit.platform.suite.api.SelectPackages;
+    import org.junit.platform.suite.api.Suite;
+
+    import static io.cucumber.junit.platform.engine.Constants.PLUGIN_PROPERTY_NAME;
+
+    @Suite
+    @IncludeEngines("cucumber")
+    @SelectPackages("com.example")
+    // Writes the failed tests to rerun.txt
+    @ConfigurationParameter(key = PLUGIN_PROPERTY_NAME, value = "rerun:target/rerun.txt")
+    public class RunCucumber {
+    }
+    ```
+  </Step>
+  <Step title="Create a rerun suite that reads the file">
+    A second suite class selects only the scenarios listed in the rerun file:
+
+    ```java src/test/java/com/example/RerunCucumber.java
+    package com.example;
+
+    import org.junit.platform.suite.api.IncludeEngines;
+    import org.junit.platform.suite.api.SelectFile;
+    import org.junit.platform.suite.api.Suite;
+
+    @Suite(failIfNoTests = false)
+    @IncludeEngines("cucumber")
+    @SelectFile("target/rerun.txt")
+    public class RerunCucumber {
+    }
+    ```
+
+    `failIfNoTests = false` allows the suite to succeed when all scenarios passed and no rerun file was written.
+  </Step>
+  <Step title="Configure two Surefire executions">
+    The two suites must run in separate Surefire executions, because the JUnit Platform builds the test plan before any tests run:
+
+    ```xml pom.xml
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-surefire-plugin</artifactId>
+      <executions>
+        <execution>
+          <id>run-cucumber</id>
+          <phase>test</phase>
+          <goals><goal>test</goal></goals>
+          <configuration>
+            <includes>
+              <include>**/RunCucumber.java</include>
+            </includes>
+            <!-- Allow failure so rerun-cucumber still executes -->
+            <testFailureIgnore>true</testFailureIgnore>
+          </configuration>
+        </execution>
+        <execution>
+          <id>rerun-cucumber</id>
+          <phase>test</phase>
+          <goals><goal>test</goal></goals>
+          <configuration>
+            <includes>
+              <include>**/RerunCucumber.java</include>
+            </includes>
+          </configuration>
+        </execution>
+      </executions>
+    </plugin>
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+With Maven Surefire 3.5.4+, you can alternatively use `<rerunFailingTestsCount>` together with the `long` naming strategy instead of maintaining two separate suite classes.
+</Tip>

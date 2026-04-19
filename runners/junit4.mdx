@@ -1,0 +1,167 @@
+---
+title: "Running Cucumber with JUnit 4 (Legacy Support)"
+description: "Run Cucumber with the JUnit 4 runner using @RunWith and @CucumberOptions, with notes on JUnit Rules, parallel execution, and migration to JUnit 5."
+---
+
+The `cucumber-junit` module provides a JUnit 4 runner that executes Cucumber scenarios as part of a standard JUnit 4 test suite. It is still usable in projects that have not migrated to JUnit 5, but it receives only maintenance updates — new features are developed exclusively in the JUnit Platform Engine.
+
+<Warning>
+JUnit 4 is in maintenance mode. For all new projects, use the [JUnit Platform Engine](/runners/junit5) (`cucumber-junit-platform-engine`), which provides active development, richer configuration, and better IDE and build-tool integration.
+</Warning>
+
+## Adding the dependency
+
+Add `cucumber-junit` to your project, using the `cucumber-bom` for version management:
+
+```xml pom.xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-bom</artifactId>
+      <version>${cucumber.version}</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+
+<dependencies>
+  <dependency>
+    <groupId>io.cucumber</groupId>
+    <artifactId>cucumber-junit</artifactId>
+    <scope>test</scope>
+  </dependency>
+</dependencies>
+```
+
+## Creating a runner class
+
+Create an empty class annotated with `@RunWith(Cucumber.class)`. Cucumber discovers feature files and glue code from the same package as the runner class by default.
+
+```java src/test/java/com/example/RunCucumberTest.java
+package com.example;
+
+import io.cucumber.junit.Cucumber;
+import io.cucumber.junit.CucumberOptions;
+import org.junit.runner.RunWith;
+
+@RunWith(Cucumber.class)
+@CucumberOptions(plugin = "message:target/cucumber-report.ndjson")
+public class RunCucumberTest {
+}
+```
+
+Running this class (via Maven, Gradle, or your IDE) executes all scenarios found in the `com.example` package and its sub-packages.
+
+## @CucumberOptions fields
+
+The `@CucumberOptions` annotation mirrors command-line options for the Cucumber CLI. All fields are optional and fall back to sensible defaults.
+
+| Field | Type | Description |
+|---|---|---|
+| `features` | `String[]` | Paths to feature files or directories. Defaults to the runner's package. |
+| `glue` | `String[]` | Packages containing step definitions and hooks. Defaults to the runner's package. |
+| `plugin` | `String[]` | Output plugins. Example: `"pretty"`, `"json:target/report.json"`. |
+| `tags` | `String` | Tag expression to filter scenarios. Example: `"@Smoke and not @Slow"`. |
+| `dryRun` | `boolean` | When `true`, checks that every step has a matching definition without executing them. |
+| `monochrome` | `boolean` | When `true`, disables ANSI colour codes in console output. |
+
+```java src/test/java/com/example/RunCucumberTest.java
+package com.example;
+
+import io.cucumber.junit.Cucumber;
+import io.cucumber.junit.CucumberOptions;
+import org.junit.runner.RunWith;
+
+@RunWith(Cucumber.class)
+@CucumberOptions(
+    features = "src/test/resources/features",
+    glue = "com.example.steps",
+    plugin = { "pretty", "json:target/cucumber-report.json" },
+    tags = "@Smoke and not @Slow",
+    dryRun = false,
+    monochrome = true
+)
+public class RunCucumberTest {
+}
+```
+
+## JUnit Rules support
+
+Cucumber JUnit 4 recognises `@ClassRule`, `@BeforeClass`, and `@AfterClass` on the runner class. Code annotated with these executes once before and after all scenarios in the suite.
+
+```java src/test/java/com/example/RunCucumberTest.java
+package com.example;
+
+import io.cucumber.junit.Cucumber;
+import io.cucumber.junit.CucumberOptions;
+import org.junit.ClassRule;
+import org.junit.rules.ExternalResource;
+import org.junit.runner.RunWith;
+
+@RunWith(Cucumber.class)
+@CucumberOptions(plugin = "message:target/cucumber-report.ndjson")
+public class RunCucumberTest {
+
+    @ClassRule
+    public static ExternalResource resource = new ExternalResource() {
+        @Override
+        protected void before() {
+            // Runs once before all scenarios
+        }
+
+        @Override
+        protected void after() {
+            // Runs once after all scenarios
+        }
+    };
+}
+```
+
+<Warning>
+JUnit Rules are not portable. They do not execute when Cucumber is run from the command line, IntelliJ IDEA's Cucumber plugin, or cucumber-eclipse. Use [Cucumber hooks](/concepts/hooks) (`@BeforeAll` / `@AfterAll`) instead, which work across all runners.
+</Warning>
+
+## Parallel execution with Maven
+
+The JUnit 4 runner supports parallel execution of feature files across multiple threads via Maven Surefire. Set the `parallel` property to `methods` or `both` and specify a thread count:
+
+```xml pom.xml
+<build>
+  <plugins>
+    <plugin>
+      <artifactId>maven-surefire-plugin</artifactId>
+      <version>${maven-surefire-plugin.version}</version>
+      <configuration>
+        <parallel>both</parallel>
+        <threadCount>4</threadCount>
+      </configuration>
+    </plugin>
+  </plugins>
+</build>
+```
+
+<Note>
+JUnit 4 parallel execution runs feature files concurrently, not individual scenarios. For scenario-level parallelism and finer-grained control, migrate to the [JUnit Platform Engine](/runners/junit5) or use [TestNG](/runners/testng).
+</Note>
+
+## Skipped scenarios with Assume
+
+The JUnit 4 runner supports `org.junit.Assume`. A failed assumption aborts the scenario and marks it as skipped (not failed), which is useful for conditionally skipping scenarios based on the runtime environment.
+
+```java src/test/java/com/example/steps/MySteps.java
+package com.example.steps;
+
+import io.cucumber.java.Before;
+import org.junit.Assume;
+
+public class MySteps {
+
+    @Before
+    public void checkEnvironment() {
+        boolean serviceAvailable = checkIfServiceIsUp();
+        Assume.assumeTrue("External service unavailable, skipping", serviceAvailable);
+    }
+}
+```

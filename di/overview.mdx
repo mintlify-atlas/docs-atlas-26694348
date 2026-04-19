@@ -1,0 +1,54 @@
+---
+title: "Sharing state between step definitions"
+description: "By default Cucumber creates new step definition instances per scenario. Use a DI container to share state safely across step definition classes."
+---
+
+By default Cucumber instantiates a fresh step definition object for every scenario. This means instance fields are reset between scenarios, which is exactly what you want for test isolation — but it also means you cannot share state between two different step definition classes simply by storing values in fields. Dependency injection (DI) solves this problem by letting you declare shared objects as injectable components with a well-defined lifecycle that is tied to the scenario.
+
+## Why you need dependency injection
+
+Imagine a scenario that spans two step definition classes: one class sets up a user, another class makes a purchase on that user's behalf. Without DI, there is no reliable way to pass the user object from the first class to the second. You could use a static field or a singleton, but those approaches leak state between scenarios and cause flaky tests.
+
+With DI, you declare a shared state object (for example, `TestContext`), inject it into both step definition classes, and the DI container ensures all classes in the same scenario receive the same instance. After the scenario completes, the container disposes of the scoped objects automatically.
+
+## Available DI modules
+
+Cucumber JVM ships first-class support for several DI frameworks. All of them are optional — add only the one that matches your project's existing stack.
+
+| Module | Artifact | Description |
+|---|---|---|
+| Spring / Spring Boot | `cucumber-spring` | Full Spring `ApplicationContext` with autowiring, `@ScenarioScope`, and `@MockBean` support. Best choice for Spring Boot projects. |
+| Google Guice | `cucumber-guice` | Lightweight, annotation-driven injection with scenario scope and singleton scope. |
+| PicoContainer | `cucumber-picocontainer` | Zero-configuration constructor injection. Cucumber discovers and wires dependencies automatically. |
+| CDI 2 (javax) | `cucumber-cdi2` | CDI Standalone Edition using the `javax` namespace. Requires a CDI implementation such as Weld or OpenWebBeans. |
+| Jakarta CDI | `cucumber-jakarta-cdi` | Same as `cucumber-cdi2` but uses the `jakarta` namespace. Required for Jakarta EE 9+ projects. |
+
+All modules are managed by the `cucumber-bom` bill of materials, so you do not need to specify a version when you use the BOM.
+
+## Choosing a DI framework
+
+- **Already using Spring Boot?** Use `cucumber-spring`. It reuses your existing application context and integrates with `@MockBean`, transactions, and test slices.
+- **Already using Guice?** Use `cucumber-guice`. Bindings declared in your existing modules are available in tests.
+- **No DI in production code?** Use `cucumber-picocontainer`. It requires no configuration at all — just use constructor injection.
+- **Jakarta EE application?** Use `cucumber-jakarta-cdi` with Weld SE.
+
+Only one DI module may be active at a time. Placing two DI modules on the classpath simultaneously causes a startup error.
+
+<CardGroup cols={2}>
+  <Card title="Spring" icon="leaf" href="/di/spring">
+    Use Spring Boot or Spring Framework to manage your test application context with full autowiring support.
+  </Card>
+  <Card title="Google Guice" icon="zap" href="/di/guice">
+    Lightweight, annotation-driven injection with scenario and singleton scope.
+  </Card>
+  <Card title="PicoContainer" icon="box" href="/di/picocontainer">
+    Zero-configuration constructor injection — no annotations, no module classes required.
+  </Card>
+  <Card title="CDI 2 / Jakarta CDI" icon="layers" href="/di/cdi">
+    Standard CDI injection for javax and jakarta namespaces with Weld or OpenWebBeans.
+  </Card>
+</CardGroup>
+
+## Custom ObjectFactory
+
+If none of the built-in modules fits your needs, you can implement the `io.cucumber.core.backend.ObjectFactory` interface yourself and register it via the Java `ServiceLoader` mechanism. Your implementation controls exactly how step definition classes are instantiated and disposed. This is an advanced option; prefer an existing module where possible.

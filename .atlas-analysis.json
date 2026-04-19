@@ -1,0 +1,110 @@
+{
+  "projectType": "framework",
+  "projectName": "Cucumber JVM",
+  "projectDescription": "A BDD testing framework for the JVM that lets teams write automated tests in plain Gherkin language and execute them with Java, Kotlin, and popular test runners like JUnit 5 and TestNG.",
+  "theme": "palm",
+  "primaryColor": "#23d96b",
+  "lightColor": "#1c8f5b",
+  "darkColor": "#fb740d",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/gherkin-basics",
+              "concepts/step-definitions",
+              "concepts/hooks",
+              "concepts/data-tables",
+              "concepts/tags"
+            ]
+          },
+          {
+            "group": "Running Tests",
+            "pages": [
+              "runners/junit5",
+              "runners/junit4",
+              "runners/testng",
+              "runners/parallel-execution"
+            ]
+          },
+          {
+            "group": "Dependency Injection",
+            "pages": [
+              "di/overview",
+              "di/spring",
+              "di/guice",
+              "di/picocontainer",
+              "di/cdi"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Configuration",
+            "pages": [
+              "reference/configuration-options",
+              "reference/cucumber-expressions",
+              "reference/doc-strings"
+            ]
+          },
+          {
+            "group": "Plugins & Reporting",
+            "pages": [
+              "reference/built-in-plugins",
+              "reference/custom-plugins"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "reference/upgrading",
+              "reference/changelog"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Write tests in plain Gherkin (Given/When/Then) readable by the whole team",
+    "JUnit 5 Platform Engine for seamless IDE and build tool integration",
+    "JUnit 4 and TestNG runners for legacy project support",
+    "Parallel scenario and feature execution with resource locking",
+    "Rich dependency injection support: Spring, Guice, PicoContainer, CDI2, OpenEJB",
+    "Flexible DataTable transformations for structured test data",
+    "Custom plugin/event listener system for reporting and integration",
+    "Tag-based scenario filtering and execution control",
+    "Maven and Gradle build tool integration with Surefire and Companion plugins",
+    "Kotlin support via cucumber-kotlin-java8 module"
+  ],
+  "publicApiSurface": [
+    "@Given, @When, @Then, @And, @But (step definition annotations)",
+    "@Before, @After, @BeforeStep, @AfterStep, @BeforeAll, @AfterAll (hook annotations)",
+    "@DataTableType, @ParameterType, @DocStringType (type transformation annotations)",
+    "@DefaultParameterTransformer, @DefaultDataTableCellTransformer, @DefaultDataTableEntryTransformer",
+    "io.cucumber.java.Scenario (scenario info and embedding API)",
+    "io.cucumber.plugin.Plugin (custom plugin interface)",
+    "io.cucumber.plugin.EventListener / ConcurrentEventListener (event bus integration)",
+    "io.cucumber.plugin.event.* (event types: TestCaseStarted, TestStepFinished, etc.)",
+    "io.cucumber.datatable.DataTable (data table manipulation API)",
+    "@CucumberOptions (JUnit 4 configuration annotation)",
+    "@Suite + @IncludeEngines(\"cucumber\") (JUnit 5 suite configuration)",
+    "io.cucumber.spring.CucumberContextConfiguration (Spring integration annotation)",
+    "cucumber.junit-platform.* properties (JUnit Platform configuration)",
+    "cucumber.execution.parallel.* properties (parallel execution configuration)"
+  ]
+}

@@ -1,0 +1,211 @@
+---
+title: "Filtering Cucumber scenarios with tags and expressions"
+description: "Learn how to use Cucumber tags to organize, filter, and selectively run scenarios using tag expressions, Maven, Gradle, and JUnit 5 tag integration."
+---
+
+Tags are labels you apply to features, scenarios, scenario outlines, and example blocks in your Gherkin files. They begin with `@` and serve two purposes: they let you filter which scenarios run during a test execution, and they allow hooks to conditionally execute only for scenarios with specific tags. Tags cost nothing to add and are one of the most practical organizational tools in a Cucumber project.
+
+## Applying tags in feature files
+
+You can place one or more tags on the line immediately above any of the following elements: `Feature`, `Rule`, `Scenario`, `Scenario Outline`, or `Examples`.
+
+```gherkin title="src/test/resources/features/payment.feature"
+@payments @regression
+Feature: Payment processing
+
+  @smoke @fast
+  Scenario: Pay with a valid credit card
+    Given I have items in my cart
+    When I pay with card number "4111111111111111"
+    Then the order should be confirmed
+
+  @slow @browser
+  Scenario Outline: Pay via third-party provider
+    Given I have items in my cart
+    When I choose <provider> at checkout
+    Then I should be redirected to <provider>
+
+    @paypal
+    Examples: PayPal
+      | provider |
+      | PayPal   |
+
+    @stripe
+    Examples: Stripe
+      | provider |
+      | Stripe   |
+```
+
+Tags placed on a `Feature` are inherited by every scenario and example row inside it. Tags on a `Scenario Outline` are inherited by every example row. Tags on an `Examples` block are inherited by every row in that block.
+
+## Tag expressions
+
+Tag expressions are Boolean formulas built from tag names and three operators: `and`, `or`, and `not`. Parentheses control grouping.
+
+| Expression | Meaning |
+|---|---|
+| `@smoke` | Scenarios tagged `@smoke` |
+| `@smoke and @fast` | Scenarios tagged with both `@smoke` and `@fast` |
+| `@smoke or @regression` | Scenarios tagged with either |
+| `not @slow` | Scenarios not tagged `@slow` |
+| `@browser and not @paypal` | Browser scenarios that are not PayPal |
+| `@smoke and not (@slow or @flaky)` | Smoke scenarios that are neither slow nor flaky |
+
+## Filtering with cucumber.filter.tags
+
+Pass tag expressions to Cucumber using the `cucumber.filter.tags` system property. Only scenarios that match the expression are executed.
+
+<Tabs>
+  <Tab title="Maven">
+    ```bash
+    # Run only smoke tests
+    mvn test -Dcucumber.filter.tags="@smoke"
+
+    # Run smoke tests that are not slow
+    mvn test -Dcucumber.filter.tags="@smoke and not @slow"
+
+    # Run either payments or authentication scenarios
+    mvn test -Dcucumber.filter.tags="@payments or @auth"
+    ```
+
+    You can also set this permanently in `cucumber.properties` (applies to the Cucumber CLI runner) or `junit-platform.properties` (for the JUnit Platform engine):
+
+    ```properties title="src/test/resources/cucumber.properties"
+    cucumber.filter.tags=@smoke and not @slow
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    First, expose the system property in your `build.gradle` (or `build.gradle.kts`) so Gradle forwards it to the test JVM:
+
+    ```groovy title="build.gradle"
+    tasks.test {
+        useJUnitPlatform()
+        systemProperty("cucumber.filter.tags", System.getProperty("cucumber.filter.tags"))
+    }
+    ```
+
+    Then run with:
+
+    ```bash
+    # Run smoke tests
+    gradle test -Dcucumber.filter.tags="@smoke"
+
+    # Exclude slow tests
+    gradle test -Dcucumber.filter.tags="not @slow"
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+`cucumber.filter.tags` uses Cucumber tag expression syntax. When running with the JUnit Platform engine, you can alternatively use JUnit's own tag filtering (see below), which uses slightly different syntax.
+</Note>
+
+## JUnit 5 tag mapping
+
+When you use `cucumber-junit-platform-engine`, Cucumber maps Gherkin tags to JUnit 5 tags. The `@` prefix is stripped: the Gherkin tag `@smoke` becomes the JUnit tag `smoke`.
+
+```gherkin
+@Smoke
+@Ignore
+Scenario: A tagged scenario
+  Given I tag a scenario
+  When I select tests with that tag for execution
+  Then my tagged scenario is executed
+```
+
+With Maven Surefire you can filter using the JUnit `groups` and `excludedGroups` parameters, which accept [JUnit 5 tag expressions](https://docs.junit.org/current/running-tests/tags.html#expressions):
+
+```bash
+# Run Smoke or Sanity scenarios, but not Ignore
+mvn verify -Dgroups="Smoke | Sanity" -DexcludedGroups="Ignore"
+```
+
+<Warning>
+JUnit 5 tag expressions use `|` for OR and `&` for AND, whereas Cucumber tag expressions use `or` and `and`. When using `cucumber.filter.tags`, use Cucumber syntax. When filtering via Surefire `groups`/`excludedGroups`, use JUnit syntax.
+</Warning>
+
+## @Ignore and @Disabled patterns
+
+Cucumber does not have a built-in skip mechanism like JUnit's `@Disabled`. The idiomatic way to skip scenarios is to tag them and exclude that tag from execution.
+
+### Skip with cucumber.filter.tags (Cucumber runner)
+
+```gherkin title="src/test/resources/features/checkout.feature"
+@Ignore
+Scenario: Broken checkout flow — pending fix in issue #123
+  Given the checkout page is open
+  When I submit an empty form
+  Then I should see validation errors
+```
+
+```properties title="src/test/resources/cucumber.properties"
+cucumber.filter.tags=not @Ignore
+```
+
+### Skip with JUnit Platform (cucumber-junit-platform-engine)
+
+For the JUnit Platform engine, use the `@Disabled` tag name to align with JUnit conventions, then set:
+
+```properties title="src/test/resources/junit-platform.properties"
+cucumber.filter.tags=not @Disabled
+```
+
+```gherkin
+@Disabled
+Scenario: Work in progress — do not run
+  Given something that is not yet implemented
+```
+
+<Tip>
+Add a comment or description to any `@Ignore` or `@Disabled` scenario explaining why it is skipped and linking to a tracking issue. This prevents scenarios from being forgotten indefinitely.
+</Tip>
+
+## Using tags with hooks
+
+Hooks can be restricted to scenarios that match a tag expression using the annotation's `value` attribute. See [Using hooks](/concepts/hooks) for full details.
+
+```java title="src/test/java/com/example/hooks/BrowserHooks.java"
+import io.cucumber.java.Before;
+import io.cucumber.java.After;
+
+public class BrowserHooks {
+
+    @Before("@browser")
+    public void startBrowser() {
+        driver = new ChromeDriver();
+    }
+
+    @After("@browser")
+    public void stopBrowser() {
+        driver.quit();
+    }
+
+    @Before("@database and not @readonly")
+    public void resetDatabase() {
+        testDatabase.truncateAll();
+        testDatabase.loadFixtures();
+    }
+}
+```
+
+## Using tags for parallel resource locking (JUnit Platform)
+
+With `cucumber-junit-platform-engine`, tags can be mapped to exclusive resource locks to prevent concurrent access to shared resources during parallel execution:
+
+```properties title="src/test/resources/junit-platform.properties"
+cucumber.execution.parallel.enabled=true
+cucumber.execution.exclusive-resources.reads-and-writes-db.read-write=java.lang.System.properties
+cucumber.execution.exclusive-resources.reads-db.read=java.lang.System.properties
+```
+
+```gherkin
+@reads-and-writes-db
+Scenario: Modifies database state
+  Given ...
+
+@reads-db
+Scenario: Only reads database state
+  Given ...
+```
+
+The `@` prefix is omitted from the property key name.

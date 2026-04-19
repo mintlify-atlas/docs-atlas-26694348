@@ -1,0 +1,254 @@
+---
+title: "Built-in reporting and output plugins for Cucumber JVM"
+description: "Reference for all built-in Cucumber JVM plugins: HTML, JSON, JUnit XML, TestNG XML, pretty, progress, message, rerun, timeline, usage, and more."
+---
+
+Cucumber JVM ships with a set of built-in plugins that cover the most common reporting and output needs. You activate them through the `cucumber.plugin` property, the `--plugin` CLI flag, or the `plugin` attribute of `@CucumberOptions`. Each plugin is identified by a short name and optionally followed by a colon and an output path. This page documents every built-in plugin, its configuration string, and what it produces.
+
+## Activating plugins
+
+```properties title="cucumber.properties"
+cucumber.plugin=pretty,html:target/report.html,json:target/cucumber.json
+```
+
+```java title="@CucumberOptions"
+@CucumberOptions(
+    plugin = {
+        "pretty",
+        "html:target/report.html",
+        "json:target/cucumber.json"
+    }
+)
+```
+
+```bash title="CLI"
+cucumber --plugin pretty --plugin html:target/report.html
+```
+
+---
+
+## html — HTML report
+
+Renders a rich, single-file HTML report of the test execution. The report includes scenario statuses, step details, embedded screenshots, and attachments.
+
+```properties
+cucumber.plugin=html:target/cucumber-reports/report.html
+```
+
+The path must end in `.html`. The report is written as a self-contained file that can be opened directly in a browser.
+
+<Tip>
+This is the recommended report format for human review. It is produced by the [cucumber/html-formatter](https://github.com/cucumber/html-formatter) library.
+</Tip>
+
+---
+
+## json — JSON report
+
+Renders a JSON representation of the test execution. This format is widely supported by CI tools and third-party report aggregators.
+
+```properties
+cucumber.plugin=json:target/cucumber-reports/cucumber.json
+```
+
+<Warning>
+The JSON formatter is in **maintenance mode**. It will continue to receive bug fixes but no new features. For new integrations, prefer the `message` plugin which produces a richer, schema-backed NDJSON stream.
+</Warning>
+
+---
+
+## junit — JUnit XML report
+
+Renders a JUnit-compatible XML report. Compatible with Jenkins, GitLab CI, GitHub Actions, and most other CI platforms that parse JUnit XML.
+
+```properties
+cucumber.plugin=junit:target/cucumber-reports/junit.xml
+```
+
+The report is produced by the [cucumber/junit-xml-formatter](https://github.com/cucumber/junit-xml-formatter) library.
+
+---
+
+## testng — TestNG XML report
+
+Renders a TestNG-compatible XML report, suitable for projects that integrate with TestNG tooling for result aggregation.
+
+```properties
+cucumber.plugin=testng:target/cucumber-reports/testng.xml
+```
+
+The report is produced by the [cucumber/testng-xml-formatter](https://github.com/cucumber/testng-xml-formatter) library.
+
+---
+
+## pretty — pretty-print to console
+
+Renders an annotated, coloured representation of each scenario as it executes. Shows step text, status icons, and stack traces for failures.
+
+```properties
+cucumber.plugin=pretty
+```
+
+No output path is required. Output goes to standard output.
+
+<Info>
+When using `cucumber-junit` or `cucumber-testng`, the pretty plugin is **not** enabled by default. Activate it explicitly if you want step-by-step output in your build logs.
+</Info>
+
+---
+
+## progress — dot-progress indicator
+
+Renders a compact progress indicator: a dot (`.`) for each passing scenario, `F` for failure, `S` for skipped, and so on. Useful for large test suites where you want minimal console noise.
+
+```properties
+cucumber.plugin=progress
+```
+
+The output goes to standard output and also shows a count of scenarios at the end.
+
+---
+
+## summary — execution summary
+
+Renders a summary table of scenario counts by status after the test run completes. When using the CLI, the summary plugin is enabled by default. Use `--no-summary` to suppress it.
+
+```properties
+cucumber.plugin=summary
+```
+
+---
+
+## message — NDJSON message stream
+
+Writes the full test execution as a stream of newline-delimited JSON (NDJSON) messages conforming to the [Cucumber Messages](https://github.com/cucumber/messages) schema. This is the canonical output format for tool integrations.
+
+```properties
+cucumber.plugin=message:target/cucumber-reports/cucumber.ndjson
+```
+
+The message stream contains events for every phase of execution, including source parsing, step definitions, test cases, and results. It can be consumed by any tool that supports the Cucumber Messages specification.
+
+---
+
+## rerun — rerun file
+
+Writes a file listing the URIs of every failing scenario in a format that can be fed back into `cucumber.features` to re-run only those scenarios.
+
+```properties
+cucumber.plugin=rerun:target/rerun.txt
+```
+
+To re-run the failures:
+
+```properties
+cucumber.features=@target/rerun.txt
+```
+
+<Note>
+With the JUnit Platform Engine, rerun files must have a `.txt` suffix and can be used with `@SelectFile("target/rerun.txt")` in a suite class.
+</Note>
+
+---
+
+## timeline — timeline visualisation
+
+Renders an interactive HTML timeline of the test execution. Shows when each scenario started and finished, and which thread executed it. Especially useful for diagnosing parallel execution behaviour.
+
+```properties
+cucumber.plugin=timeline:target/cucumber-reports/timeline/
+```
+
+The path is a directory. Cucumber writes the timeline assets there as a collection of HTML, CSS, and JS files.
+
+---
+
+## usage — step definition usage statistics
+
+Renders a plain-text report of step definition usage statistics: how many times each step definition was invoked and average execution time.
+
+```properties
+cucumber.plugin=usage:target/cucumber-reports/usage.txt
+```
+
+---
+
+## usage-json — JSON step definition usage
+
+Renders the same step definition usage statistics as the `usage` plugin but in JSON format, suitable for further processing.
+
+```properties
+cucumber.plugin=usage-json:target/cucumber-reports/usage.json
+```
+
+---
+
+## unused — unused step definitions
+
+Renders a plain-text report listing all step definitions that were never matched during the test run. Use this to identify dead glue code.
+
+```properties
+cucumber.plugin=unused:target/cucumber-reports/unused.txt
+```
+
+---
+
+## teamcity — TeamCity service messages
+
+Interspaces Cucumber's output with [TeamCity Service Messages](https://www.jetbrains.com/help/teamcity/service-messages.html), allowing TeamCity to parse and display test results in its UI.
+
+```properties
+cucumber.plugin=teamcity
+```
+
+No output path is required. The plugin writes directly to standard output.
+
+<Info>
+This plugin is automatically activated when Cucumber detects it is running inside a TeamCity build agent. You do not need to add it manually in that environment.
+</Info>
+
+---
+
+## Publishing to Cucumber Reports
+
+In addition to local plugins, you can publish your results to [Cucumber Reports](https://reports.cucumber.io) — a hosted service for sharing and browsing test results.
+
+```properties title="cucumber.properties"
+cucumber.publish.enabled=true
+
+# Optional: authenticate to a private account
+cucumber.publish.token=your-secret-token
+
+# Optional: suppress the publish URL banner
+cucumber.publish.quiet=true
+```
+
+<Warning>
+Do not commit your `cucumber.publish.token` to source control. Use an environment variable or a CI secret instead.
+</Warning>
+
+```bash title="CI environment variable"
+export CUCUMBER_PUBLISH_TOKEN=your-secret-token
+export CUCUMBER_PUBLISH_ENABLED=true
+```
+
+---
+
+## Quick reference
+
+| Plugin | Config string | Output |
+|---|---|---|
+| `html` | `html:path/to/report.html` | Single HTML file |
+| `json` | `json:path/to/report.json` | JSON file (maintenance mode) |
+| `junit` | `junit:path/to/junit.xml` | JUnit XML file |
+| `testng` | `testng:path/to/testng.xml` | TestNG XML file |
+| `pretty` | `pretty` | Console (coloured) |
+| `progress` | `progress` | Console (dots) |
+| `summary` | `summary` | Console |
+| `message` | `message:path/to/out.ndjson` | NDJSON message stream |
+| `rerun` | `rerun:path/to/rerun.txt` | Rerun file |
+| `timeline` | `timeline:path/to/dir/` | Timeline HTML directory |
+| `usage` | `usage:path/to/usage.txt` | Usage plain text |
+| `usage-json` | `usage-json:path/to/usage.json` | Usage JSON |
+| `unused` | `unused:path/to/unused.txt` | Unused step definitions |
+| `teamcity` | `teamcity` | Console (service messages) |

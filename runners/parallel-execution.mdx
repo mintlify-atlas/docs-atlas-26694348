@@ -1,0 +1,195 @@
+---
+title: "Running Cucumber scenarios in parallel"
+description: "Configure Cucumber's parallel execution with dynamic, fixed, or custom strategies, exclusive resource locks, isolation tags, and execution order control."
+---
+
+Cucumber's JUnit Platform Engine supports parallel execution of scenarios out of the box. By default, all scenarios run sequentially in a single thread. Enabling parallelism can significantly reduce wall-clock time for large test suites, but requires careful consideration of shared resources and test isolation.
+
+## Enabling parallel execution
+
+Set `cucumber.execution.parallel.enabled` to `true` in `junit-platform.properties`:
+
+```properties src/test/resources/junit-platform.properties
+cucumber.execution.parallel.enabled=true
+```
+
+That is the only change required to start running scenarios concurrently. Cucumber will use the `dynamic` strategy with a factor of `1` by default, scaling the thread count to match the number of available CPU cores.
+
+## Choosing a parallelism strategy
+
+Cucumber supports three built-in strategies, configured via `cucumber.execution.parallel.config.strategy`.
+
+### Dynamic strategy (default)
+
+The dynamic strategy computes desired parallelism as `available cores × factor`. This is the default when no strategy is specified (factor defaults to `1.0`).
+
+```properties src/test/resources/junit-platform.properties
+cucumber.execution.parallel.enabled=true
+cucumber.execution.parallel.config.strategy=dynamic
+cucumber.execution.parallel.config.dynamic.factor=1.5
+```
+
+### Fixed strategy
+
+The fixed strategy sets an explicit thread count and an optional cap on the underlying ForkJoin pool size.
+
+```properties src/test/resources/junit-platform.properties
+cucumber.execution.parallel.enabled=true
+cucumber.execution.parallel.config.strategy=fixed
+cucumber.execution.parallel.config.fixed.parallelism=4
+cucumber.execution.parallel.config.fixed.max-pool-size=8
+```
+
+<Note>
+`max-pool-size` limits the pool's maximum threads, but Cucumber does not guarantee that the number of concurrently executing scenarios will never exceed this. See [junit5#3108](https://github.com/junit-team/junit5/issues/3108) for details.
+</Note>
+
+### Custom strategy
+
+Provide your own implementation of `ParallelExecutionConfigurationStrategy`:
+
+```properties src/test/resources/junit-platform.properties
+cucumber.execution.parallel.enabled=true
+cucumber.execution.parallel.config.strategy=custom
+cucumber.execution.parallel.config.custom.class=com.example.MyCustomParallelStrategy
+```
+
+## Exclusive resources
+
+When multiple scenarios manipulate the same shared resource concurrently, tests can become flaky. Cucumber supports [JUnit Platform resource locking](https://docs.junit.org/current/writing-tests/parallel-execution.html#synchronization) to synchronise access.
+
+Tag scenarios with a label, then map that label to a resource name in `junit-platform.properties`. Resources can be locked for reading (shared) or reading and writing (exclusive).
+
+```gherkin src/test/resources/features/system-properties.feature
+Feature: Exclusive resources
+
+  @reads-and-writes-system-properties
+  Scenario: First example
+    Given this reads and writes system properties
+    When it is executed
+    Then it will not be executed concurrently with the second example
+
+  @reads-system-properties
+  Scenario: Second example
+    Given this reads system properties
+    When it is executed
+    Then it will not be executed concurrently with the first example
+```
+
+```properties src/test/resources/junit-platform.properties
+cucumber.execution.parallel.enabled=true
+# read-write lock: only one scenario with this tag runs at a time
+cucumber.execution.exclusive-resources.reads-and-writes-system-properties.read-write=java.lang.System.properties
+# read lock: many readers allowed, but not while the writer holds its lock
+cucumber.execution.exclusive-resources.reads-system-properties.read=java.lang.System.properties
+```
+
+<Note>
+The `@` prefix is not included in the property key. The tag `@reads-system-properties` maps to the key `reads-system-properties`.
+</Note>
+
+The resource name is an arbitrary string that identifies the shared resource. For canonical names of well-known JVM resources, see [`Resources.java`](https://github.com/junit-team/junit5/blob/main/junit-jupiter-api/src/main/java/org/junit/jupiter/api/parallel/Resources.java) in the JUnit 5 repository.
+
+## Running scenarios in isolation
+
+To guarantee that a specific scenario runs while no other scenarios are executing at all, map a tag to the global exclusive resource key:
+
+```gherkin src/test/resources/features/isolated.feature
+Feature: Isolated scenarios
+
+  @isolated
+  Scenario: Isolated example
+    Given this scenario runs isolated
+    When it is executed
+    Then it will not be executed concurrently with the second or third example
+
+  Scenario: Second example
+    When it is executed
+    Then it will not be executed concurrently with the isolated example
+    And it will be executed concurrently with the third example
+
+  Scenario: Third example
+    When it is executed
+    Then it will not be executed concurrently with the isolated example
+    And it will be executed concurrently with the second example
+```
+
+```properties src/test/resources/junit-platform.properties
+cucumber.execution.parallel.enabled=true
+cucumber.execution.exclusive-resources.isolated.read-write=org.junit.platform.engine.support.hierarchical.ExclusiveResource.GLOBAL_KEY
+```
+
+Any scenario tagged `@isolated` will hold the global lock for its entire duration, preventing all other scenarios from running at the same time.
+
+## Executing features vs scenarios in parallel
+
+By default, when parallel execution is enabled, individual scenarios and examples run concurrently across any available thread. If you need to reproduce the JUnit 4 behaviour — where whole feature files run in parallel but scenarios within a feature run sequentially — set `cucumber.execution.execution-mode.feature` to `same_thread`:
+
+```properties src/test/resources/junit-platform.properties
+cucumber.execution.parallel.enabled=true
+cucumber.execution.execution-mode.feature=same_thread
+```
+
+With `same_thread`, all scenarios in a feature file execute on the same thread, in document order, while different feature files can still run concurrently.
+
+## Controlling execution order
+
+By default, Cucumber executes features in lexical file-name order and scenarios from top to bottom within each feature. You can change this with `cucumber.execution.order`.
+
+| Value | Behaviour |
+|---|---|
+| `lexical` (default) | Features sorted by URI; scenarios top to bottom |
+| `reverse` | Same as lexical but each container's elements are reversed |
+| `random` | Scenarios and examples shuffled within their parent container |
+
+```properties src/test/resources/junit-platform.properties
+cucumber.execution.order=random
+```
+
+To make random order deterministic and reproducible, set a fixed seed:
+
+```properties src/test/resources/junit-platform.properties
+cucumber.execution.order=random
+cucumber.execution.order.random.seed=20090120
+```
+
+<Tip>
+If you do not specify a seed, Cucumber picks one at random and prints it when discovery issues are logged. You can use that printed seed to reproduce a specific execution order later.
+</Tip>
+
+## Build tool configuration
+
+Parallel execution properties can be passed from Maven or Gradle in addition to `junit-platform.properties`.
+
+<Tabs>
+  <Tab title="Maven">
+    ```xml pom.xml
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-surefire-plugin</artifactId>
+      <version>3.5.4</version>
+      <configuration>
+        <properties>
+          <configurationParameters>
+            cucumber.execution.parallel.enabled=true
+            cucumber.execution.parallel.config.strategy=dynamic
+            cucumber.execution.parallel.config.dynamic.factor=1.0
+            cucumber.junit-platform.naming-strategy=long
+          </configurationParameters>
+        </properties>
+      </configuration>
+    </plugin>
+    ```
+  </Tab>
+  <Tab title="Gradle">
+    ```kotlin build.gradle.kts
+    tasks.test {
+        useJUnitPlatform()
+        systemProperty("cucumber.execution.parallel.enabled", "true")
+        systemProperty("cucumber.execution.parallel.config.strategy", "dynamic")
+        systemProperty("cucumber.execution.parallel.config.dynamic.factor", "1.0")
+        systemProperty("cucumber.junit-platform.naming-strategy", "long")
+    }
+    ```
+  </Tab>
+</Tabs>

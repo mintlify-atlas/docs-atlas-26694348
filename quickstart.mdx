@@ -1,80 +1,246 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quickstart: Build your first Cucumber JVM test suite"
+description: "Set up a Cucumber JVM project from scratch: add dependencies, write your first feature file, implement step definitions, and run passing tests."
 ---
 
-## Get started in three steps
+Cucumber JVM lets you write automated tests in plain Gherkin and execute them on the JVM. This guide walks you through creating a working project — from adding dependencies to seeing a passing test — using either Maven or Gradle.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Create a new project">
+    Start with a standard Maven or Gradle Java project targeting Java 17 or later. The examples below use the `com.example` package and place test sources under `src/test/`.
 
-### Step 1: Set up your local environment
+    <Tabs>
+      <Tab title="Maven">
+        Add the following to your `pom.xml`. The `cucumber-bom` keeps all Cucumber artifact versions in sync so you only set the version once.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+        ```xml pom.xml
+        <properties>
+            <cucumber.version>7.34.3</cucumber.version>
+            <junit.platform.version>1.10.2</junit.platform.version>
+        </properties>
 
-### Step 2: Deploy your changes
+        <dependencyManagement>
+            <dependencies>
+                <dependency>
+                    <groupId>io.cucumber</groupId>
+                    <artifactId>cucumber-bom</artifactId>
+                    <version>${cucumber.version}</version>
+                    <type>pom</type>
+                    <scope>import</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.junit</groupId>
+                    <artifactId>junit-bom</artifactId>
+                    <version>${junit.platform.version}</version>
+                    <type>pom</type>
+                    <scope>import</scope>
+                </dependency>
+            </dependencies>
+        </dependencyManagement>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+        <dependencies>
+            <dependency>
+                <groupId>io.cucumber</groupId>
+                <artifactId>cucumber-java</artifactId>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.cucumber</groupId>
+                <artifactId>cucumber-junit-platform-engine</artifactId>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.platform</groupId>
+                <artifactId>junit-platform-suite</artifactId>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+        ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+        <Tip>
+          Set `cucumber.junit-platform.naming-strategy=long` in `junit-platform.properties` to get descriptive test names in Maven Surefire reports.
+        </Tip>
+      </Tab>
+      <Tab title="Gradle">
+        Add the following to your `build.gradle.kts`. Use the Gradle BOM import to pin all Cucumber versions consistently.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+        ```kotlin build.gradle.kts
+        val cucumberVersion = "7.34.3"
 
-### Step 3: Go live
+        dependencies {
+            testImplementation(platform("io.cucumber:cucumber-bom:$cucumberVersion"))
+            testImplementation(platform("org.junit:junit-bom:1.10.2"))
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+            testImplementation("io.cucumber:cucumber-java")
+            testImplementation("io.cucumber:cucumber-junit-platform-engine")
+            testImplementation("org.junit.platform:junit-platform-suite")
+            testImplementation("org.junit.jupiter:junit-jupiter")
+        }
+
+        tasks.test {
+            useJUnitPlatform()
+            systemProperty("cucumber.junit-platform.naming-strategy", "long")
+        }
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Write a feature file">
+    Create a feature file under `src/test/resources/`. The file path determines how Cucumber discovers scenarios — place it in a package that mirrors your step definitions.
+
+    ```gherkin src/test/resources/com/example/shopping_cart.feature
+    Feature: Shopping cart
+
+      Scenario: Adding an item to an empty cart
+        Given the cart is empty
+        When I add "Wireless Keyboard" to the cart
+        Then the cart should contain 1 item
+        And the cart total should be greater than 0
+    ```
+
+    <Note>
+      Feature files use the `.feature` extension and must be on the test classpath. Placing them under `src/test/resources/` achieves this automatically in both Maven and Gradle.
+    </Note>
+  </Step>
+
+  <Step title="Implement step definitions">
+    Create a Java class that maps each Gherkin step to a method using annotations from `io.cucumber.java.en.*`. Step definition classes do not need to implement any interface or extend any base class.
+
+    ```java src/test/java/com/example/ShoppingCartSteps.java
+    package com.example;
+
+    import io.cucumber.java.en.Given;
+    import io.cucumber.java.en.When;
+    import io.cucumber.java.en.Then;
+    import io.cucumber.java.en.And;
+
+    import java.util.ArrayList;
+    import java.util.List;
+
+    import static org.junit.jupiter.api.Assertions.assertEquals;
+    import static org.junit.jupiter.api.Assertions.assertTrue;
+
+    public class ShoppingCartSteps {
+
+        private List<String> cart;
+        private double total;
+
+        @Given("the cart is empty")
+        public void the_cart_is_empty() {
+            cart = new ArrayList<>();
+            total = 0.0;
+        }
+
+        @When("I add {string} to the cart")
+        public void i_add_to_the_cart(String item) {
+            cart.add(item);
+            total += 49.99; // simulated price
+        }
+
+        @Then("the cart should contain {int} item")
+        public void the_cart_should_contain_items(int expected) {
+            assertEquals(expected, cart.size());
+        }
+
+        @And("the cart total should be greater than {int}")
+        public void the_cart_total_should_be_greater_than(int threshold) {
+            assertTrue(total > threshold);
+        }
+    }
+    ```
+
+    <Tip>
+      Cucumber automatically matches `{string}` to a `String` parameter and `{int}` to an `int`. These are built-in Cucumber Expression parameter types — no extra configuration needed.
+    </Tip>
+  </Step>
+
+  <Step title="Add a suite runner">
+    Maven Surefire and Gradle do not natively discover non-class-based JUnit Platform tests, so you need a suite class to bridge them. Create an annotated class in the same package as your step definitions.
+
+    ```java src/test/java/com/example/RunCucumberTest.java
+    package com.example;
+
+    import org.junit.platform.suite.api.ConfigurationParameter;
+    import org.junit.platform.suite.api.IncludeEngines;
+    import org.junit.platform.suite.api.SelectPackages;
+    import org.junit.platform.suite.api.Suite;
+
+    import static io.cucumber.junit.platform.engine.Constants.GLUE_PROPERTY_NAME;
+
+    @Suite
+    @IncludeEngines("cucumber")
+    @SelectPackages("com.example")
+    @ConfigurationParameter(key = GLUE_PROPERTY_NAME, value = "com.example")
+    public class RunCucumberTest {
+    }
+    ```
+
+    The `@SelectPackages` annotation tells Cucumber where to find `.feature` files, and `GLUE_PROPERTY_NAME` points to the package containing step definitions. Both point to `com.example` here.
+  </Step>
+
+  <Step title="Run your tests">
+    Run the full test suite using your build tool from the project root.
+
+    <Tabs>
+      <Tab title="Maven">
+        ```bash
+        mvn test
+        ```
+      </Tab>
+      <Tab title="Gradle">
+        ```bash
+        ./gradlew test
+        ```
+      </Tab>
+    </Tabs>
+
+    When all steps are matched and assertions pass, you should see output similar to this:
+
+    ```
+    [INFO] -------------------------------------------------------
+    [INFO]  T E S T S
+    [INFO] -------------------------------------------------------
+    [INFO] Running com.example.RunCucumberTest
+
+    Scenario: Adding an item to an empty cart   # com/example/shopping_cart.feature:3
+      Given the cart is empty                   # com.example.ShoppingCartSteps.the_cart_is_empty()
+      When I add "Wireless Keyboard" to the cart # com.example.ShoppingCartSteps.i_add_to_the_cart(String)
+      Then the cart should contain 1 item       # com.example.ShoppingCartSteps.the_cart_should_contain_items(int)
+      And the cart total should be greater than 0 # com.example.ShoppingCartSteps.the_cart_total_should_be_greater_than(int)
+
+    1 Scenarios (1 passed)
+    4 Steps (4 passed)
+    0m0.234s
+
+    [INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+    [INFO] BUILD SUCCESS
+    ```
+
+    <Note>
+      If Cucumber cannot find a matching step definition, it prints a snippet you can paste directly into your step definition class. Undefined steps are counted as failures so your build will not pass until all steps are implemented.
+    </Note>
+  </Step>
+</Steps>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Installation" icon="download" href="/installation">
+    Explore all available modules, optional integrations, and dependency management with the BOM.
+  </Card>
+  <Card title="Gherkin basics" icon="file-lines" href="/concepts/gherkin-basics">
+    Learn Scenario Outlines, data tables, tags, backgrounds, and rules.
+  </Card>
+  <Card title="JUnit 5 runner" icon="gear" href="/runners/junit5">
+    Configure parallel execution, tagging, naming strategies, and rerun support.
+  </Card>
+  <Card title="Dependency injection" icon="plug" href="/di/overview">
+    Share state between step definition classes using Spring, Guice, or PicoContainer.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

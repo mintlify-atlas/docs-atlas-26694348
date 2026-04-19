@@ -1,0 +1,110 @@
+---
+title: "Cucumber JVM: BDD testing framework for the JVM"
+description: "Cucumber JVM lets you write automated tests in plain Gherkin language and run them with Java, Kotlin, JUnit 5, TestNG, and popular DI frameworks."
+---
+
+Cucumber JVM is the Java implementation of Cucumber — a tool for running automated tests written in plain language. Because tests are written in Gherkin (Given/When/Then), they can be read and understood by everyone on your team: developers, QA engineers, product managers, and business stakeholders alike.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get a working Cucumber JVM project up and running in minutes with Maven or Gradle.
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Add Cucumber JVM dependencies to your Maven or Gradle project with the BOM for version management.
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/gherkin-basics">
+    Learn Gherkin syntax, step definitions, hooks, data tables, and tags.
+  </Card>
+  <Card title="Running Tests" icon="play" href="/runners/junit5">
+    Run Cucumber with JUnit 5 Platform Engine, JUnit 4, or TestNG.
+  </Card>
+</CardGroup>
+
+## What is Cucumber JVM?
+
+Cucumber JVM bridges the gap between business requirements and automated tests. You write feature files in the Gherkin language that describe your application's behavior in plain English. Cucumber then maps each step in those files to Java methods — called step definitions — that perform the actual test actions.
+
+```gherkin src/test/resources/com/example/calculator.feature
+Feature: Calculator
+  Scenario: Adding two numbers
+    Given I have a calculator
+    When I add 2 and 3
+    Then the result should be 5
+```
+
+```java src/test/java/com/example/CalculatorSteps.java
+package com.example;
+
+import io.cucumber.java.en.Given;
+import io.cucumber.java.en.When;
+import io.cucumber.java.en.Then;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class CalculatorSteps {
+
+    private Calculator calculator;
+    private int result;
+
+    @Given("I have a calculator")
+    public void iHaveACalculator() {
+        calculator = new Calculator();
+    }
+
+    @When("I add {int} and {int}")
+    public void iAddAndNumbers(int a, int b) {
+        result = calculator.add(a, b);
+    }
+
+    @Then("the result should be {int}")
+    public void theResultShouldBe(int expected) {
+        assertEquals(expected, result);
+    }
+}
+```
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Plain language tests" icon="file-lines">
+    Write feature files in Gherkin that non-technical stakeholders can read and verify.
+  </Card>
+  <Card title="JUnit 5 Platform Engine" icon="gear">
+    First-class integration with JUnit 5 for IDE support, parallel execution, and suite configuration.
+  </Card>
+  <Card title="Dependency injection" icon="plug">
+    Share state between steps using Spring, Guice, PicoContainer, CDI2, or a custom object factory.
+  </Card>
+  <Card title="Parallel execution" icon="bolt">
+    Run scenarios concurrently with configurable thread pools and resource locking support.
+  </Card>
+  <Card title="Rich reporting" icon="chart-bar">
+    Built-in HTML, JSON, JUnit XML, TestNG XML, and pretty-print plugins. Publish results to Cucumber Reports.
+  </Card>
+  <Card title="Extensible plugins" icon="puzzle-piece">
+    Implement the Plugin interface to listen to execution events and build custom reporters or integrations.
+  </Card>
+</CardGroup>
+
+## Ecosystem modules
+
+Cucumber JVM is published as a set of focused Maven artifacts. You compose what you need:
+
+| Module | Purpose |
+|--------|---------|
+| `cucumber-java` | Core annotations and step definition support |
+| `cucumber-junit-platform-engine` | JUnit 5 test engine (recommended) |
+| `cucumber-junit` | JUnit 4 runner (maintenance mode) |
+| `cucumber-testng` | TestNG integration |
+| `cucumber-spring` | Spring / Spring Boot dependency injection |
+| `cucumber-guice` | Google Guice dependency injection |
+| `cucumber-picocontainer` | PicoContainer dependency injection |
+| `cucumber-cdi2` | CDI 2 / Jakarta CDI dependency injection |
+| `datatable` | DataTable conversion utilities |
+| `cucumber-bom` | Bill of Materials for version management |
+
+## Community and support
+
+- [GitHub Discussions](https://github.com/orgs/cucumber/discussions) — ask questions and share ideas
+- [Cucumber Discord](https://cucumber.io/docs/community/get-in-touch/#discord) — real-time community chat
+- [Stack Overflow](https://stackoverflow.com/questions/tagged/cucumber-jvm) — tagged questions
+- [GitHub Issues](https://github.com/cucumber/cucumber-jvm/issues) — bug reports and feature requests

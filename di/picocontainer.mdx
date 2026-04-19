@@ -1,0 +1,230 @@
+---
+title: "Using PicoContainer with Cucumber JVM"
+description: "Add zero-configuration constructor injection to Cucumber step definitions with PicoContainer — no annotations or module classes required."
+---
+
+The `cucumber-picocontainer` module is the simplest DI option for Cucumber JVM. PicoContainer uses constructor injection exclusively and requires no annotations, no configuration files, and no module classes. Cucumber discovers your step definition classes, inspects their constructors, and wires the dependency graph automatically. If two step definition classes declare a constructor parameter of the same type, they receive the same instance for the duration of the scenario.
+
+## Adding the dependency
+
+Add `cucumber-picocontainer` to your Maven `pom.xml` and use the `cucumber-bom` for version management:
+
+```xml pom.xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-bom</artifactId>
+      <version>${cucumber.version}</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+
+<dependencies>
+  <dependency>
+    <groupId>io.cucumber</groupId>
+    <artifactId>cucumber-picocontainer</artifactId>
+    <scope>test</scope>
+  </dependency>
+</dependencies>
+```
+
+Once the jar is on the classpath, Cucumber switches to PicoContainer automatically. No further configuration is needed.
+
+## Constructor injection
+
+PicoContainer resolves dependencies by examining constructor parameters. Declare all dependencies as constructor parameters and PicoContainer will create and inject them before your step methods are called.
+
+```java src/test/java/com/example/app/Belly.java
+package com.example.app;
+
+import java.util.List;
+
+public class Belly {
+
+    private List<String> contents;
+
+    public void setContents(List<String> contents) {
+        this.contents = contents;
+    }
+
+    public List<String> getContents() {
+        return contents;
+    }
+}
+```
+
+```java src/test/java/com/example/app/StepDefinitions.java
+package com.example.app;
+
+import io.cucumber.java.en.Given;
+import io.cucumber.java.en.Then;
+
+import java.util.Collections;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class StepDefinitions {
+
+    private final Belly belly;
+
+    public StepDefinitions(Belly belly) {
+        this.belly = belly;
+    }
+
+    @Given("I have {int} {word} in my belly")
+    public void i_have_n_things_in_my_belly(int n, String what) {
+        belly.setContents(Collections.nCopies(n, what));
+    }
+
+    @Then("there are {int} cukes in my belly")
+    public void there_are_n_cukes_in_my_belly(int n) {
+        assertEquals(Collections.nCopies(n, "cukes"), belly.getContents());
+    }
+}
+```
+
+## Sharing state between step definition classes
+
+When multiple step definition classes declare a constructor parameter of the same type, PicoContainer creates that type once per scenario and passes the same instance to every class that needs it. This is the idiomatic way to share state across step definition files.
+
+```java src/test/java/com/example/app/SharedScenarioState.java
+package com.example.app;
+
+public class SharedScenarioState {
+    private String currentUser;
+    private String lastOrderId;
+
+    public String getCurrentUser() { return currentUser; }
+    public void setCurrentUser(String currentUser) { this.currentUser = currentUser; }
+
+    public String getLastOrderId() { return lastOrderId; }
+    public void setLastOrderId(String lastOrderId) { this.lastOrderId = lastOrderId; }
+}
+```
+
+```java src/test/java/com/example/app/UserStepDefinitions.java
+package com.example.app;
+
+import io.cucumber.java.en.Given;
+
+public class UserStepDefinitions {
+
+    private final SharedScenarioState state;
+
+    public UserStepDefinitions(SharedScenarioState state) {
+        this.state = state;
+    }
+
+    @Given("I am logged in as {string}")
+    public void i_am_logged_in_as(String username) {
+        state.setCurrentUser(username);
+    }
+}
+```
+
+```java src/test/java/com/example/app/OrderStepDefinitions.java
+package com.example.app;
+
+import io.cucumber.java.en.When;
+import io.cucumber.java.en.Then;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+public class OrderStepDefinitions {
+
+    private final SharedScenarioState state;
+
+    public OrderStepDefinitions(SharedScenarioState state) {
+        this.state = state;
+    }
+
+    @When("the user places an order")
+    public void the_user_places_an_order() {
+        // uses state.getCurrentUser() set by UserStepDefinitions
+        state.setLastOrderId("order-123");
+    }
+
+    @Then("the order is confirmed")
+    public void the_order_is_confirmed() {
+        assertNotNull(state.getLastOrderId());
+    }
+}
+```
+
+Both `UserStepDefinitions` and `OrderStepDefinitions` receive the same `SharedScenarioState` instance because PicoContainer manages it as a single object within the scenario container.
+
+## Lifecycle and performance
+
+All step definition classes and their constructor dependencies are recreated for every scenario, even if that scenario does not execute any steps from a given class. For expensive resources — such as browser drivers or database connections — create them lazily rather than in the constructor.
+
+```java src/test/java/com/example/app/LazyWebDriver.java
+public class LazyWebDriver implements WebDriver {
+
+    private WebDriver delegate;
+
+    private WebDriver getDelegate() {
+        if (delegate == null) {
+            delegate = new ChromeDriver();
+        }
+        return delegate;
+    }
+
+    @Override
+    public void get(String url) {
+        getDelegate().get(url);
+    }
+
+    // delegate remaining WebDriver methods ...
+}
+```
+
+## Resource cleanup
+
+Step definition classes or their dependencies that own resources requiring cleanup should implement `org.picocontainer.Disposable`. PicoContainer calls `dispose()` after Cucumber's own `@After` hooks have run.
+
+```java src/test/java/com/example/app/ManagedResource.java
+import org.picocontainer.Disposable;
+
+public class ManagedResource implements Disposable {
+
+    @Override
+    public void dispose() {
+        // release resources here
+    }
+}
+```
+
+## Providing additional PicoContainer providers
+
+If a step definition class needs a dependency that PicoContainer cannot construct automatically (for example, a `java.sql.Connection`), annotate a `Provider` class with `@CucumberPicoProvider`.
+
+<Warning>
+`@CucumberPicoProvider` is marked `@API(status = EXPERIMENTAL)` in the source. The API may change in a future release.
+</Warning>
+
+```java src/test/java/com/example/app/DatabaseConnectionProvider.java
+package com.example.app;
+
+import io.cucumber.picocontainer.CucumberPicoProvider;
+import org.picocontainer.injectors.Provider;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+
+@CucumberPicoProvider
+public class DatabaseConnectionProvider implements Provider {
+
+    public Connection provide() throws ClassNotFoundException, ReflectiveOperationException, SQLException {
+        Class.forName("com.mysql.cj.jdbc.Driver").getDeclaredConstructor().newInstance();
+        return DriverManager.getConnection("jdbc:mysql://localhost:3306/mydb", "mydbuser", "mydbpassword");
+    }
+}
+```
+
+<Note>
+`PicoFactory` is intentionally not open for extension. If you need deeper customisation, implement `io.cucumber.core.backend.ObjectFactory` directly and register it via `ServiceLoader`.
+</Note>

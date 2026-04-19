@@ -1,0 +1,286 @@
+---
+title: "Upgrading Cucumber JVM across major version boundaries"
+description: "Step-by-step migration guide for upgrading Cucumber JVM across major versions, covering v6→v7 and the upcoming v8 changes including Java 17 baseline."
+---
+
+Major versions of Cucumber JVM introduce breaking changes alongside new capabilities. Each major release has a corresponding release announcement in the `release-notes/` directory of the repository that explains the motivation behind every breaking change in detail. This page summarises the most important migration steps for each version boundary and directs you to the appropriate resources for the full picture.
+
+<Note>
+The CHANGELOG at the root of the repository records every change. For a narrative explanation of why things changed and what the migration path looks like, read the corresponding release announcement in `release-notes/`.
+</Note>
+
+---
+
+## General upgrade strategy
+
+<Steps>
+  <Step title="Upgrade to the latest patch of your current major version">
+    Before jumping to a new major, upgrade to the latest patch release within your current major. Deprecation warnings in the later patch releases tell you exactly what to fix before the major upgrade.
+  </Step>
+  <Step title="Read the release announcement">
+    Read the release notes for the target major version at `release-notes/vX.0.0.md` in the repository, or on GitHub at `https://github.com/cucumber/cucumber-jvm/blob/main/release-notes/`.
+  </Step>
+  <Step title="Update the version in your build file">
+    Use the `cucumber-bom` Bill of Materials to keep all Cucumber modules at the same version and avoid dependency skew.
+
+    ```xml title="pom.xml"
+    <dependencyManagement>
+      <dependencies>
+        <dependency>
+          <groupId>io.cucumber</groupId>
+          <artifactId>cucumber-bom</artifactId>
+          <version>8.0.0</version>
+          <type>pom</type>
+          <scope>import</scope>
+        </dependency>
+      </dependencies>
+    </dependencyManagement>
+    ```
+  </Step>
+  <Step title="Fix compiler and runtime errors">
+    Compile your test code. API-level breaks appear as compile errors. Then run your tests and address any `NoSuchMethodError` or `ClassNotFoundException` issues that appear at runtime.
+  </Step>
+  <Step title="Review changed default behaviours">
+    Major releases often change defaults (e.g. strict mode, plugin activation). Run your suite and confirm the results match expectations before committing the upgrade.
+  </Step>
+</Steps>
+
+---
+
+## Version upgrade guides
+
+<AccordionGroup>
+
+  <Accordion title="v7 → v8 (upcoming)">
+
+    The next major version raises the Java baseline and tightens the public API surface. Check the `[Unreleased]` section of `CHANGELOG.md` for the complete list of changes as v8 is still in development.
+
+    **Java 17 required**
+
+    Cucumber JVM v8 requires Java 17 as a minimum. If your project targets Java 11, you must upgrade your JDK and set `source`/`target` compatibility to 17.
+
+    ```xml title="pom.xml"
+    <properties>
+      <maven.compiler.release>17</maven.compiler.release>
+    </properties>
+    ```
+
+    ```kotlin title="build.gradle.kts"
+    java {
+        toolchain {
+            languageVersion.set(JavaLanguageVersion.of(17))
+        }
+    }
+    ```
+
+    **JSpecify nullability annotations**
+
+    The public API is annotated with [JSpecify](https://jspecify.dev/) nullability annotations (`@Nullable`, `@NonNull`). If you use static analysis tools (e.g. NullAway, IntelliJ inspections), you may encounter new warnings or errors at call sites that previously had unannotated types. Add the `org.jspecify:jspecify` dependency to your compile classpath if your analyser requires it.
+
+    **Final and non-instantiatable classes**
+
+    Classes that were not designed for extension are now `final`. Utility classes are no longer instantiatable. If you subclassed any Cucumber internal class to customise behaviour, you will need to refactor to use the official extension points (plugins, object factories, parameter types, etc.).
+
+    Review the list of affected classes in `.revapi/api-changes.json` in the repository.
+
+    **JUnit Platform 6 / JUnit Jupiter 6**
+
+    The JUnit Platform Engine now targets JUnit Platform 6 (JUnit Jupiter 6). If you pin JUnit versions in your build, update them accordingly.
+
+    **Cucumber Expressions v19**
+
+    Cucumber Expressions has been updated to v19. If you have custom expressions that relied on undocumented parsing behaviour, test them carefully.
+
+  </Accordion>
+
+  <Accordion title="v6 → v7">
+
+    The full announcement is in `release-notes/v7.0.0.md`.
+
+    **Cucumber Expressions v11 — grammar rewrite**
+
+    Cucumber Expressions v11 replaces the old string-substitution parser with a proper grammar. Edge cases that previously happened to work may now fail to parse. Test all your step definitions and custom parameter types.
+
+    **`@BeforeAll` and `@AfterAll` hooks**
+
+    The `cucumber-java` module gained `@BeforeAll` and `@AfterAll` hooks that run once per test run (not per scenario). If you had workarounds using static initialisers or JUnit extensions to achieve the same effect, you can now replace them.
+
+    ```java
+    import io.cucumber.java.BeforeAll;
+    import io.cucumber.java.AfterAll;
+
+    public class GlobalSetup {
+
+        @BeforeAll
+        public static void startServer() {
+            // runs once before any scenario
+        }
+
+        @AfterAll
+        public static void stopServer() {
+            // runs once after all scenarios
+        }
+    }
+    ```
+
+    **JUnit Platform Suite Engine replaces `@Cucumber`**
+
+    The `@Cucumber` annotation is deprecated in favour of `@Suite` from `junit-platform-suite`. Replace:
+
+    ```java title="Before (v6)"
+    import io.cucumber.junit.platform.engine.Cucumber;
+
+    @Cucumber
+    public class RunCucumberTest {}
+    ```
+
+    ```java title="After (v7)"
+    import org.junit.platform.suite.api.ConfigurationParameter;
+    import org.junit.platform.suite.api.IncludeEngines;
+    import org.junit.platform.suite.api.SelectPackages;
+    import org.junit.platform.suite.api.Suite;
+
+    import static io.cucumber.junit.platform.engine.Constants.GLUE_PROPERTY_NAME;
+
+    @Suite
+    @IncludeEngines("cucumber")
+    @SelectPackages("com.example")
+    @ConfigurationParameter(key = GLUE_PROPERTY_NAME, value = "com.example")
+    public class RunCucumberTest {}
+    ```
+
+    Add the `junit-platform-suite` dependency:
+
+    ```xml title="pom.xml"
+    <dependency>
+      <groupId>org.junit.platform</groupId>
+      <artifactId>junit-platform-suite</artifactId>
+      <scope>test</scope>
+    </dependency>
+    ```
+
+    **Strict mode is now the only mode**
+
+    `--strict` and `--no-strict` CLI arguments, and the `cucumber.execution.strict` property, have been removed. Cucumber always executes in strict mode, meaning pending and undefined steps always fail the build. Remove any explicit `strict = true` settings and update any scripts that pass `--strict`.
+
+    **`TypeRegistryConfigurer` removed**
+
+    If you still use `TypeRegistryConfigurer` (deprecated since v5), migrate to `@ParameterType`, `@DataTableType`, and `@DocStringType` annotations on methods in your glue classes.
+
+    **DataTable API changes**
+
+    All `DataTable.asX()` methods now require a `@DataTableType` transformer. If you relied on the old behaviour without a transformer, replace the calls:
+
+    | Old call | New call (without transformer) |
+    |---|---|
+    | `DataTable.asList()` | `DataTable.values()` |
+    | `DataTable.asLists()` | `DataTable.cells()` |
+    | `DataTable.asMaps()` | `DataTable.entries()` |
+
+    **`cucumber.options` property removed (already gone in v6)**
+
+    If upgrading from v5 directly to v7, note that `cucumber.options` was removed in v6. Use individual properties instead.
+
+    **Weld and Needle modules removed**
+
+    `cucumber-weld` and `cucumber-needle` have been removed. Migrate to `cucumber-jakarta-cdi` or `cucumber-cdi2`.
+
+    **Summary and progress plugins**
+
+    In the CLI, `summary` is now active by default (use `--no-summary` to disable). The `progress` formatter is no longer active by default (add `--plugin progress` to enable). When using `cucumber-junit` or `cucumber-testng`, neither is active by default.
+
+  </Accordion>
+
+  <Accordion title="v5 → v6">
+
+    The full announcement is in `release-notes/v6.0.0.md`.
+
+    **Gherkin Rule and Example keywords**
+
+    Gherkin 19 introduced `Rule` and `Example` as new keywords. Feature files using these keywords require Cucumber v6+.
+
+    **Message formatter introduced**
+
+    The `message` plugin was introduced as the long-term replacement for the `json` plugin. The JSON formatter is now in maintenance mode.
+
+    **HTML formatter rewritten**
+
+    The HTML formatter now writes a single self-contained `.html` file. If you previously pointed it at a directory, update your configuration to include the file name:
+
+    ```properties
+    # Before
+    cucumber.plugin=html:target/cucumber-reports
+
+    # After
+    cucumber.plugin=html:target/cucumber-reports/report.html
+    ```
+
+    **`cucumber.options` removed**
+
+    The `cucumber.options` system property is no longer supported. Set each option as its own property.
+
+    **Spring: `@CucumberContextConfiguration` required**
+
+    Spring integration now requires an explicit class annotated with both `@CucumberContextConfiguration` and a Spring context annotation (e.g. `@SpringBootTest`). The `cucumber.xml` fallback and annotating step-definition classes with `@ContextConfiguration` are no longer supported.
+
+    **Strict mode is now the default**
+
+    The `--non-strict` mode has been removed; `--strict` is the default.
+
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## JUnit 4 maintenance mode — migrate to JUnit 5
+
+<Warning>
+`cucumber-junit` (JUnit 4 runner) has been deprecated as of Cucumber JVM 7.24.0. It will continue to receive critical bug fixes but no new features. New projects should use `cucumber-junit-platform-engine` (JUnit 5).
+</Warning>
+
+The JUnit 5 Platform Engine provides first-class IDE integration, parallel execution, suite support, and exclusive resource locking — capabilities that are not available in the JUnit 4 runner.
+
+**Migration steps:**
+
+<Steps>
+  <Step title="Replace cucumber-junit with cucumber-junit-platform-engine">
+    ```xml title="pom.xml"
+    <!-- Remove -->
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-junit</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Add -->
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-junit-platform-engine</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.platform</groupId>
+      <artifactId>junit-platform-suite</artifactId>
+      <scope>test</scope>
+    </dependency>
+    ```
+  </Step>
+  <Step title="Replace the runner class">
+    Convert `@RunWith(Cucumber.class)` + `@CucumberOptions` to a `@Suite` class:
+
+    ```java
+    @Suite
+    @IncludeEngines("cucumber")
+    @SelectPackages("com.example")
+    @ConfigurationParameter(key = GLUE_PROPERTY_NAME, value = "com.example")
+    public class RunCucumberTest {}
+    ```
+  </Step>
+  <Step title="Move properties to junit-platform.properties">
+    Create `src/test/resources/junit-platform.properties` and move your Cucumber configuration there. The same property names are used.
+  </Step>
+  <Step title="Configure Maven Surefire or Gradle">
+    Surefire and Gradle need workarounds for non-class-based test discovery. See the [JUnit Platform Engine README](https://github.com/cucumber/cucumber-jvm/tree/main/cucumber-junit-platform-engine) for the recommended configuration.
+  </Step>
+</Steps>

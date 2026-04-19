@@ -1,0 +1,262 @@
+---
+title: "Data tables in Cucumber JVM: conversions and types"
+description: "Learn how to use Cucumber JVM data tables: raw DataTable, List/Map conversions, @DataTableType for POJOs, and default transformers with Jackson."
+---
+
+Data tables let you pass structured data inline within a Gherkin step. They are written directly beneath the step text as a pipe-delimited grid. Cucumber JVM converts the table to a Java type based on the parameter type you declare in the step definition method. For simple cases the built-in conversions are sufficient; for domain-specific types you register custom converters using `@DataTableType`.
+
+## Declaring a data table in Gherkin
+
+A data table immediately follows the step that accepts it. You can include an optional header row.
+
+```gherkin title="src/test/resources/features/library.feature"
+Feature: Library catalog
+
+  Scenario: Import a list of books
+    Given the following books exist in the catalog:
+      | firstName   | lastName | birthDate  |
+      | Annie M. G. | Schmidt  | 1911-03-20 |
+      | Roald       | Dahl     | 1916-09-13 |
+      | Astrid      | Lindgren | 1907-11-14 |
+```
+
+## Built-in conversion types
+
+Cucumber JVM can convert a data table to several standard Java types without any additional configuration.
+
+<Tabs>
+  <Tab title="List&lt;List&lt;String&gt;&gt;">
+    The most basic form. Every row is a `List<String>`, including the header row if one exists.
+
+    ```java title="src/test/java/com/example/steps/LibraryStepDefinitions.java"
+    import io.cucumber.java.en.Given;
+    import java.util.List;
+
+    public class LibraryStepDefinitions {
+
+        @Given("the following books exist in the catalog:")
+        public void booksExist(List<List<String>> rows) {
+            // rows.get(0) = ["firstName", "lastName", "birthDate"]
+            // rows.get(1) = ["Annie M. G.", "Schmidt", "1911-03-20"]
+            for (int i = 1; i < rows.size(); i++) {
+                List<String> row = rows.get(i);
+                catalog.add(row.get(0), row.get(1), row.get(2));
+            }
+        }
+    }
+    ```
+  </Tab>
+  <Tab title="List&lt;Map&lt;String,String&gt;&gt;">
+    The first row becomes map keys (column headers). Each subsequent row becomes a `Map<String, String>`. This is the most convenient built-in type for header-based tables.
+
+    ```java title="src/test/java/com/example/steps/LibraryStepDefinitions.java"
+    @Given("the following books exist in the catalog:")
+    public void booksExist(List<Map<String, String>> entries) {
+        for (Map<String, String> entry : entries) {
+            String firstName = entry.get("firstName");
+            String lastName  = entry.get("lastName");
+            String birthDate = entry.get("birthDate");
+            catalog.add(firstName, lastName, birthDate);
+        }
+    }
+    ```
+  </Tab>
+  <Tab title="Map&lt;String,String&gt;">
+    When the table has two columns and no header, the first column becomes keys and the second becomes values.
+
+    ```gherkin
+    Given the following airport codes are registered:
+      | KMSY | Louis Armstrong New Orleans International Airport |
+      | KSFO | San Francisco International Airport               |
+      | KJFK | John F. Kennedy International Airport             |
+    ```
+
+    ```java
+    @Given("the following airport codes are registered:")
+    public void airportCodes(Map<String, String> codes) {
+        codes.forEach(airportService::register);
+    }
+    ```
+  </Tab>
+  <Tab title="Raw DataTable">
+    Declare `io.cucumber.datatable.DataTable` to receive the table without any conversion and perform transformations manually.
+
+    ```java title="src/test/java/com/example/steps/LibraryStepDefinitions.java"
+    import io.cucumber.datatable.DataTable;
+
+    @Given("the following books exist in the catalog:")
+    public void booksExist(DataTable table) {
+        List<List<String>> cells = table.cells();
+        DataTable body = table.rows(1); // skip header
+        body.asList(); // List<String> of all cells
+        table.diff(expectedTable); // assert equality
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Map with list values
+
+When the first column is a key and there are multiple value columns, use `Map<String, List<String>>`:
+
+```gherkin title="src/test/resources/features/airports.feature"
+Given the following airport coordinates are registered:
+  | KMSY | 29.993333 |  -90.258056 |
+  | KSFO | 37.618889 | -122.375000 |
+```
+
+```java title="src/test/java/com/example/steps/AirportStepDefinitions.java"
+@Given("the following airport coordinates are registered:")
+public void airportCoordinates(Map<String, List<String>> coords) {
+    coords.forEach((code, values) -> {
+        double lat = Double.parseDouble(values.get(0));
+        double lon = Double.parseDouble(values.get(1));
+        airportService.register(code, lat, lon);
+    });
+}
+```
+
+## Map of maps
+
+Leaving the first cell blank tells Cucumber to use the first column as keys and the header row as nested map keys:
+
+```gherkin title="src/test/resources/features/airports.feature"
+Given the following airport coordinates are registered:
+  |      |       lat |         lon |
+  | KMSY | 29.993333 |  -90.258056 |
+  | KSFO | 37.618889 | -122.375000 |
+```
+
+```java
+@Given("the following airport coordinates are registered:")
+public void airportCoordinates(Map<String, Map<String, String>> coords) {
+    coords.forEach((code, fields) -> {
+        airportService.register(code,
+            Double.parseDouble(fields.get("lat")),
+            Double.parseDouble(fields.get("lon")));
+    });
+}
+```
+
+## @DataTableType for custom POJO mapping
+
+Register a custom converter with `@DataTableType` to have Cucumber automatically convert table rows to domain objects. The method signature determines the transformer type:
+
+| Signature | Registered as |
+|---|---|
+| `String → YourType` | `TableCellTransformer` — each cell becomes an object |
+| `Map<String,String> → YourType` | `TableEntryTransformer` — each header-keyed row becomes an object |
+| `List<String> → YourType` | `TableRowTransformer` — each raw row becomes an object |
+| `DataTable → YourType` | `TableTransformer` — the whole table becomes a single object |
+
+```java title="src/test/java/com/example/config/DataTableTypes.java"
+package com.example.config;
+
+import io.cucumber.java.DataTableType;
+import java.util.Map;
+
+public class DataTableTypes {
+
+    // Entry transformer: header row maps to POJO fields
+    @DataTableType
+    public Author author(Map<String, String> entry) {
+        return new Author(
+            entry.get("firstName"),
+            entry.get("lastName"),
+            entry.get("birthDate")
+        );
+    }
+
+    // Cell transformer: each cell string maps to a custom type
+    @DataTableType
+    public Airport airport(String code) {
+        return new Airport(code);
+    }
+}
+```
+
+With these converters registered, step definitions can declare the domain type directly:
+
+```java title="src/test/java/com/example/steps/LibraryStepDefinitions.java"
+@Given("the following authors exist:")
+public void authorsExist(List<Author> authors) {
+    authors.forEach(authorRepository::save);
+}
+```
+
+### Empty string replacement
+
+A data table cell cannot represent an empty string by default — an empty cell means the value is absent. Use `replaceWithEmptyString` to designate a sentinel value that will be replaced with `""`:
+
+```java
+@DataTableType(replaceWithEmptyString = "[empty]")
+public Author author(Map<String, String> entry) {
+    return new Author(entry.get("firstName"), entry.get("nickname"));
+}
+```
+
+```gherkin
+| firstName | nickname  |
+| Alice     | [empty]   |
+```
+
+## @DefaultDataTableCellTransformer and @DefaultDataTableEntryTransformer
+
+These annotations register fallback converters used when no specific `@DataTableType` exists for the target type. Combining them with a library like Jackson Databind gives you automatic conversion to any type without writing individual transformers.
+
+```java title="src/test/java/com/example/config/JacksonDataTableConfig.java"
+package com.example.config;
+
+import io.cucumber.java.DefaultDataTableCellTransformer;
+import io.cucumber.java.DefaultDataTableEntryTransformer;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.cucumber.datatable.TableCellByTypeTransformer;
+import java.lang.reflect.Type;
+import java.util.Map;
+
+public class JacksonDataTableConfig {
+
+    private final ObjectMapper objectMapper = new ObjectMapper()
+        .findAndRegisterModules(); // enables LocalDate support, etc.
+
+    @DefaultDataTableCellTransformer
+    public Object transformCell(Object value, Type cellType) {
+        return objectMapper.convertValue(value, objectMapper.constructType(cellType));
+    }
+
+    @DefaultDataTableEntryTransformer(headersToProperties = true)
+    public Object transformEntry(
+            Map<String, String> entry,
+            Type type,
+            TableCellByTypeTransformer cellTransformer) {
+        return objectMapper.convertValue(entry, objectMapper.constructType(type));
+    }
+}
+```
+
+With `headersToProperties = true` (the default), column headers are automatically converted from `Title Case` or `Sentence case` to `camelCase` property names before the map is applied to the target type. For example, the header `First Name` maps to the field `firstName`.
+
+<Note>
+When both `@DefaultDataTableCellTransformer` and `@DefaultDataTableEntryTransformer` are registered and a step parameter is ambiguous (could be either a cell or an entry), Cucumber assumes an entry transformer. Add a header row to the table to make the intent explicit.
+</Note>
+
+## Comparing tables with diff
+
+The `DataTable.diff` method throws an exception if two tables differ, making it useful for asserting tabular output from a UI or database:
+
+```java title="src/test/java/com/example/steps/ReportStepDefinitions.java"
+import io.cucumber.datatable.DataTable;
+
+@Then("the report should show:")
+public void reportShouldShow(DataTable expectedTable) {
+    List<List<String>> actualRows = reportService.getRows();
+    DataTable actualTable = DataTable.create(actualRows);
+    expectedTable.diff(actualTable); // throws if tables differ
+}
+```
+
+Use `unorderedDiff` when row order does not matter:
+
+```java
+expectedTable.unorderedDiff(actualTable);
+```

@@ -1,0 +1,299 @@
+---
+title: "Using CDI 2 and Jakarta CDI with Cucumber JVM"
+description: "Inject dependencies into Cucumber step definitions using CDI Standalone Edition with Weld or OpenWebBeans for javax and jakarta namespaces."
+---
+
+Cucumber JVM supports the CDI Standalone Edition (CDI SE) API through two modules: `cucumber-cdi2` for the `javax` namespace used in CDI 2.0 / Java EE 8 projects, and `cucumber-jakarta-cdi` for the `jakarta` namespace used in CDI 3.0+ / Jakarta EE 9+ projects. Both modules work the same way — they start a new CDI container for each scenario, inject dependencies into step definitions, and shut the container down after the scenario completes.
+
+## Choosing the right module
+
+| Module | Namespace | CDI version | Jakarta EE version |
+|---|---|---|---|
+| `cucumber-cdi2` | `javax.*` | CDI 2.0 | Java EE 8 and earlier |
+| `cucumber-jakarta-cdi` | `jakarta.*` | CDI 3.0+ | Jakarta EE 9 and later |
+
+Choose the module that matches the CDI namespace your project already uses. The two modules are mutually exclusive — do not add both.
+
+## Adding the dependency
+
+<Tabs>
+  <Tab title="cucumber-cdi2 (javax)">
+    Add the `cucumber-cdi2` module and a CDI SE implementation. Use the `cucumber-bom` for Cucumber version management.
+
+    ```xml pom.xml
+    <dependencyManagement>
+      <dependencies>
+        <dependency>
+          <groupId>io.cucumber</groupId>
+          <artifactId>cucumber-bom</artifactId>
+          <version>${cucumber.version}</version>
+          <type>pom</type>
+          <scope>import</scope>
+        </dependency>
+      </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+      <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-cdi2</artifactId>
+        <scope>test</scope>
+      </dependency>
+    </dependencies>
+    ```
+
+    Then add one of the following CDI implementations:
+
+    ```xml pom.xml — Weld SE (recommended)
+    <dependency>
+      <groupId>org.jboss.weld.se</groupId>
+      <artifactId>weld-se-core</artifactId>
+      <version>3.1.6.Final</version>
+      <scope>test</scope>
+    </dependency>
+    ```
+
+    ```xml pom.xml — Apache OpenWebBeans
+    <dependency>
+      <groupId>org.apache.openwebbeans</groupId>
+      <artifactId>openwebbeans-se</artifactId>
+      <version>2.0.10</version>
+      <scope>test</scope>
+    </dependency>
+    ```
+  </Tab>
+  <Tab title="cucumber-jakarta-cdi (jakarta)">
+    Add the `cucumber-jakarta-cdi` module and a Jakarta-compatible CDI SE implementation.
+
+    ```xml pom.xml
+    <dependencyManagement>
+      <dependencies>
+        <dependency>
+          <groupId>io.cucumber</groupId>
+          <artifactId>cucumber-bom</artifactId>
+          <version>${cucumber.version}</version>
+          <type>pom</type>
+          <scope>import</scope>
+        </dependency>
+      </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+      <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-jakarta-cdi</artifactId>
+        <scope>test</scope>
+      </dependency>
+    </dependencies>
+    ```
+
+    Then add Weld SE 4.x, which ships Jakarta CDI support:
+
+    ```xml pom.xml — Weld SE for Jakarta EE 9+
+    <dependency>
+      <groupId>org.jboss.weld.se</groupId>
+      <artifactId>weld-se-core</artifactId>
+      <version>4.0.0.Final</version>
+      <scope>test</scope>
+    </dependency>
+    ```
+  </Tab>
+</Tabs>
+
+## Using @Inject in step definitions
+
+Annotate fields with `@Inject` to have the CDI container supply dependencies. The import path differs between the two modules.
+
+<Tabs>
+  <Tab title="javax (cucumber-cdi2)">
+    ```java src/test/java/com/example/app/StepDefinitions.java
+    package com.example.app;
+
+    import io.cucumber.java.en.Given;
+    import io.cucumber.java.en.Then;
+
+    import javax.inject.Inject;
+
+    import java.util.Collections;
+
+    import static org.junit.jupiter.api.Assertions.assertEquals;
+
+    public class StepDefinitions {
+
+        @Inject
+        private Belly belly;
+
+        @Given("I have {int} {word} in my belly")
+        public void i_have_n_things_in_my_belly(int n, String what) {
+            belly.setContents(Collections.nCopies(n, what));
+        }
+
+        @Then("there are {int} cukes in my belly")
+        public void there_are_n_cukes_in_my_belly(int n) {
+            assertEquals(Collections.nCopies(n, "cukes"), belly.getContents());
+        }
+    }
+    ```
+  </Tab>
+  <Tab title="jakarta (cucumber-jakarta-cdi)">
+    ```java src/test/java/com/example/app/StepDefinitions.java
+    package com.example.app;
+
+    import io.cucumber.java.en.Given;
+    import io.cucumber.java.en.Then;
+
+    import jakarta.inject.Inject;
+
+    import java.util.Collections;
+
+    import static org.junit.jupiter.api.Assertions.assertEquals;
+
+    public class StepDefinitions {
+
+        @Inject
+        private Belly belly;
+
+        @Given("I have {int} {word} in my belly")
+        public void i_have_n_things_in_my_belly(int n, String what) {
+            belly.setContents(Collections.nCopies(n, what));
+        }
+
+        @Then("there are {int} cukes in my belly")
+        public void there_are_n_cukes_in_my_belly(int n) {
+            assertEquals(Collections.nCopies(n, "cukes"), belly.getContents());
+        }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Adding beans.xml
+
+By default, only step definition classes are added to the CDI container as unmanaged beans. Other support classes (hooks, transformers) are not discovered automatically unless they are explicitly declared as CDI beans.
+
+Add an empty `beans.xml` file to your test resources to enable bean discovery for all classes on the classpath. This is the most reliable way to ensure all your test support code is managed by CDI.
+
+```xml src/test/resources/META-INF/beans.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee
+                           http://xmlns.jcp.org/xml/ns/javaee/beans_2_0.xsd"
+       bean-discovery-mode="all">
+</beans>
+```
+
+<Note>
+To share state between step definitions and other support code, beans must be at least application scoped (`@ApplicationScoped`). Dependent-scoped beans (the CDI default) get a new instance for every injection point, which prevents state sharing.
+</Note>
+
+## DeltaSpike integration
+
+Apache DeltaSpike provides an alternative CDI integration layer via its Container Control module. Use `cucumber-deltaspike` when you want DeltaSpike to manage the CDI container lifecycle rather than the Cucumber CDI modules above.
+
+<Warning>
+`cucumber-deltaspike` uses the `javax` namespace. It is not compatible with Jakarta EE 9+ projects.
+</Warning>
+
+<Steps>
+  <Step title="Add a beans.xml to your classpath">
+    DeltaSpike requires a `beans.xml` file to enable CDI support for your test classes.
+
+    ```xml src/test/resources/META-INF/beans.xml
+    <beans xmlns="http://java.sun.com/xml/ns/javaee"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://java.sun.com/xml/ns/javaee
+                               http://java.sun.com/xml/ns/javaee/beans_1_0.xsd">
+    </beans>
+    ```
+  </Step>
+  <Step title="Add the cucumber-deltaspike dependency">
+    ```xml pom.xml
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-deltaspike</artifactId>
+      <version>${cucumber.version}</version>
+      <scope>test</scope>
+    </dependency>
+    ```
+  </Step>
+  <Step title="Add a DeltaSpike CDI container adapter">
+    Choose the adapter that matches your CDI implementation.
+
+    <Tabs>
+      <Tab title="Weld">
+        ```xml pom.xml
+        <dependency>
+          <groupId>org.apache.deltaspike.cdictrl</groupId>
+          <artifactId>deltaspike-cdictrl-weld</artifactId>
+          <version>${deltaspike.version}</version>
+          <scope>test</scope>
+        </dependency>
+        <dependency>
+          <groupId>org.jboss.weld.se</groupId>
+          <artifactId>weld-se-core</artifactId>
+          <version>${weld-se.version}</version>
+          <scope>test</scope>
+        </dependency>
+        ```
+      </Tab>
+      <Tab title="OpenWebBeans">
+        ```xml pom.xml
+        <dependency>
+          <groupId>org.apache.deltaspike.cdictrl</groupId>
+          <artifactId>deltaspike-cdictrl-owb</artifactId>
+          <version>${deltaspike.version}</version>
+          <scope>test</scope>
+        </dependency>
+        <dependency>
+          <groupId>org.apache.openwebbeans</groupId>
+          <artifactId>openwebbeans-impl</artifactId>
+          <version>${owb.version}</version>
+          <scope>test</scope>
+        </dependency>
+        <dependency>
+          <groupId>javax.annotation</groupId>
+          <artifactId>jsr250-api</artifactId>
+          <version>1.0</version>
+          <scope>test</scope>
+        </dependency>
+        ```
+      </Tab>
+      <Tab title="OpenEJB">
+        ```xml pom.xml
+        <dependency>
+          <groupId>org.apache.deltaspike.cdictrl</groupId>
+          <artifactId>deltaspike-cdictrl-openejb</artifactId>
+          <version>${deltaspike.version}</version>
+          <scope>test</scope>
+        </dependency>
+        <dependency>
+          <groupId>org.apache.tomee</groupId>
+          <artifactId>openejb-core</artifactId>
+          <version>${openejb-core.version}</version>
+          <scope>test</scope>
+        </dependency>
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="Annotate step definitions with @Inject and @Singleton">
+    DeltaSpike does not start or stop CDI scopes, so all beans live in the default dependent scope. To share state within a scenario, annotate your step definition class with `@javax.inject.Singleton`.
+
+    ```java src/test/java/com/example/BellyStepDefinitions.java
+    import javax.inject.Inject;
+    import javax.inject.Singleton;
+
+    @Singleton
+    public class BellyStepDefinitions {
+
+        @Inject
+        private Belly belly;
+
+        // step definitions ...
+    }
+    ```
+
+    Annotating the step definition class with `@Singleton` creates one instance per scenario, so both the step definition itself and its injected fields can be used to share state within that scenario. State does not persist across scenarios — every scenario starts with a clean environment.
+  </Step>
+</Steps>
